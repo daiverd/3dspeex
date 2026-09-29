@@ -1,3 +1,8 @@
+# Part of 3dspeex: https://github.com/daiverd/3dspeex
+# Copyright (C) 2026  daiverd <david@rustytelephone.net>
+#
+# This file may be distributed under the terms of the GNU GPLv3 license.
+#
 # 3dspeex: give any USB sound card the ALSA ID "usbaudio", so
 # /etc/asound.conf can make it the default. Only cards on the USB bus
 # match; onboard codecs and HDMI audio keep their names.

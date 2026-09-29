@@ -1,4 +1,9 @@
 #!/bin/bash
+# Part of 3dspeex: https://github.com/daiverd/3dspeex
+# Copyright (C) 2026  daiverd <david@rustytelephone.net>
+#
+# This file may be distributed under the terms of the GNU GPLv3 license.
+#
 # 3dspeex installer. Run on the printer, as the user Klipper runs as:
 #   ./install.sh               install / update
 #   ./install.sh --usb-audio   also make a USB sound card the default
@@ -22,7 +27,7 @@ for arg in "$@"; do
         --usb-audio) usb_audio=1 ;;
         --no-restart) restart=0 ;;
         --uninstall) uninstall=1 ;;
-        -h|--help) sed -n '2,8p' "$0" | cut -c3-; exit 0 ;;
+        -h|--help) sed -n '/^# 3dspeex installer/,/^# Paths/p' "$0" | cut -c3-; exit 0 ;;
         *) echo "unknown option: $arg (try --help)" >&2; exit 1 ;;
     esac
 done

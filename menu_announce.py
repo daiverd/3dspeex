@@ -1,7 +1,12 @@
 # menu_announce.py - speak what the Klipper LCD shows, and what the printer
 # is doing (espeak-ng by default; see speak() to change that)
 #
-# Part of 3dspeex. Install with install.sh, or symlink this file into
+# Part of 3dspeex: https://github.com/daiverd/3dspeex
+# Copyright (C) 2026  daiverd <david@rustytelephone.net>
+#
+# This file may be distributed under the terms of the GNU GPLv3 license.
+#
+# Install with install.sh, or symlink this file into
 # ~/klipper/klippy/extras/ (see README.md).
 # Config (printer.cfg or an included file):
 #   [menu_announce]

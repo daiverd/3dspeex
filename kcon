@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Part of 3dspeex: https://github.com/daiverd/3dspeex
+# Copyright (C) 2026  daiverd <david@rustytelephone.net>
+#
+# This file may be distributed under the terms of the GNU GPLv3 license.
+
 """kcon - simple line console for Klipper's virtual serial port.
 
 Type G-code and press Enter. Responses print as plain lines.
