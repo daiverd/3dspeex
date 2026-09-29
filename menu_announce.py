@@ -84,6 +84,7 @@ class MenuAnnounce:
         self.menu = None
         self.depth = 0
         self.outer = None
+        self.lcd_size = (16, 4)  # replaced by the real size once hooked
         self.grid = self._blank_grid()
         self.screen = []
         self.pending_read = None  # prefix to say before the next screen
@@ -185,6 +186,11 @@ class MenuAnnounce:
     # write_glyph calls, then flush, so keep a text copy of each frame.
 
     def _hook_lcd(self, lcd):
+        try:
+            self.lcd_size = lcd.get_dimensions()  # 16x4, or 20x4 on HD44780
+        except Exception:
+            pass
+        self.grid = self._blank_grid()
         hooked = []
         for name, after in (('clear', self._lcd_clear),
                             ('write_text', self._lcd_text),
@@ -208,7 +214,8 @@ class MenuAnnounce:
         return wrapper
 
     def _blank_grid(self):
-        return [[' '] * 16 for _ in range(4)]
+        cols, rows = self.lcd_size
+        return [[' '] * cols for _ in range(rows)]
 
     def _lcd_clear(self, ret):
         self.grid = self._blank_grid()

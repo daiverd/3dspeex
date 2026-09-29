@@ -10,11 +10,13 @@
 #   ./install.sh --uninstall   remove 3dspeex (audio setup is left alone)
 # Add --no-restart to skip restarting Klipper.
 # Paths can be overridden: KLIPPER_DIR=... CONFIG_DIR=... ./install.sh
+# and the service name (KIAUH multi-instance): KLIPPER_SERVICE=klipper-1
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 KLIPPER_DIR="${KLIPPER_DIR:-$HOME/klipper}"
 CONFIG_DIR="${CONFIG_DIR:-$HOME/printer_data/config}"
+KLIPPER_SERVICE="${KLIPPER_SERVICE:-klipper}"
 EXTRA="$KLIPPER_DIR/klippy/extras/menu_announce.py"
 PRINTER_CFG="$CONFIG_DIR/printer.cfg"
 OUR_CFG="$CONFIG_DIR/3dspeex.cfg"
@@ -27,7 +29,7 @@ for arg in "$@"; do
         --usb-audio) usb_audio=1 ;;
         --no-restart) restart=0 ;;
         --uninstall) uninstall=1 ;;
-        -h|--help) sed -n '/^# 3dspeex installer/,/^# Paths/p' "$0" | cut -c3-; exit 0 ;;
+        -h|--help) sed -n '/^# 3dspeex installer/,/^# and the service/p' "$0" | cut -c3-; exit 0 ;;
         *) echo "unknown option: $arg (try --help)" >&2; exit 1 ;;
     esac
 done
@@ -36,7 +38,7 @@ say() { echo "==> $*"; }
 warn() { echo "!!  $*" >&2; }
 
 have_klipper_service() {
-    systemctl cat klipper.service >/dev/null 2>&1
+    systemctl cat "$KLIPPER_SERVICE.service" >/dev/null 2>&1
 }
 
 # Files that configure [menu_announce] (only the ones Klipper reads here)
@@ -57,12 +59,12 @@ print(json.load(sys.stdin)["result"]["status"]["print_stats"]["state"])' \
 
 restart_klipper() {
     if [ "$restart" = 0 ] || ! have_klipper_service; then
-        say "Restart Klipper yourself to apply: sudo systemctl restart klipper"
+        say "Restart Klipper yourself to apply: sudo systemctl restart $KLIPPER_SERVICE"
     elif printer_busy; then
         warn "A print is running; not restarting Klipper. Restart it later."
     else
         say "Restarting Klipper"
-        sudo systemctl restart klipper
+        sudo systemctl restart "$KLIPPER_SERVICE"
     fi
 }
 
@@ -137,7 +139,7 @@ fi
 
 # 4. Let the Klipper service's user reach the sound card
 if have_klipper_service; then
-    kuser="$(systemctl show -p User --value klipper.service)"
+    kuser="$(systemctl show -p User --value "$KLIPPER_SERVICE.service")"
     kuser="${kuser:-root}"
     if [ "$kuser" != root ] && ! id -nG "$kuser" | grep -qw audio; then
         say "Adding $kuser to the audio group"

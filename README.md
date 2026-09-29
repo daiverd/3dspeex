@@ -5,8 +5,8 @@ menu as you move through it, reads out the status screen on request, and
 announces what the printer is doing: heaters reaching temperature, print
 progress, messages, and errors.
 
-Built on a Sovol SV08 running Sovol's stock Klipper. It should work on any
-Klipper printer with a `[display]` menu, but that hasn't been tested.
+Built and used on a Sovol SV08, but written for Klipper in general: see
+[Compatibility](#compatibility).
 
 ## What you hear
 
@@ -45,9 +45,41 @@ one that hasn't been spoken yet.
 ## Requirements
 
 - Klipper with an LCD menu (`[display]` in `printer.cfg`)
-- `espeak-ng` and `alsa-utils` (the installer adds them if missing)
+- `espeak-ng` and `alsa-utils` (the installer adds them if missing, using
+  `apt`, so on a non-Debian host install them yourself first)
 - a speaker. On the SV08 a USB speaker or headset works well; see
   [USB speaker setup](#usb-speaker-setup).
+
+## Compatibility
+
+3dspeex only uses parts of Klipper that are in mainline, not anything Sovol
+added: the standard LCD menu, the display drivers, and the usual status
+objects (heaters, `print_stats`, `display_status`). Everything it hooks has
+been checked against current mainline Klipper's source.
+
+| Setup | Status |
+|---|---|
+| Sovol SV08, stock Sovol Klipper, 128×64 knob screen | In daily use |
+| Mainline Klipper, 12864-style screens (`uc1701`, `st7920`, `ssd1306`, `sh1106`) | Should work; untested |
+| Mainline Klipper, 20×4 character LCDs (`hd44780`) | Should work; untested |
+| Kalico (formerly Danger Klipper) and other close forks | Probably; untested |
+| Touchscreen-only printers (KlipperScreen, Creality K1 screen, ...) | No: there's no Klipper menu to read |
+
+Printer-specific details that are handled:
+
+- **Screen size** comes from the display driver, so 20-column screens are
+  read in full.
+- **Custom screen layouts** work, because "read the screen" reads what's
+  actually drawn. Custom icons are read by their name.
+- **Menus from any config** (your own `[menu ...]` sections, or a vendor's)
+  are read the same way, by the names shown on screen.
+- **Reversed knob direction** doesn't matter; speech follows the selection.
+- **Install paths:** the installer assumes the usual KIAUH layout
+  (`~/klipper`, `~/printer_data/config`, a `klipper` service). Other setups
+  can override these, below.
+
+If you try it on another printer, an issue saying whether it worked would
+help.
 
 ## Install
 
@@ -73,8 +105,13 @@ The installer:
 6. says "3D speex installed", then restarts Klipper. It won't restart
    during a print; use `--no-restart` to skip the restart entirely.
 
-If your Klipper or config lives elsewhere:
-`KLIPPER_DIR=/path/to/klipper CONFIG_DIR=/path/to/config ./install.sh`
+If your Klipper or config lives elsewhere, or you run several Klipper
+instances with KIAUH:
+
+```bash
+KLIPPER_DIR=/path/to/klipper CONFIG_DIR=/path/to/config ./install.sh
+KLIPPER_SERVICE=klipper-1 CONFIG_DIR=~/printer_1_data/config ./install.sh
+```
 
 **Update:** `cd ~/3dspeex && git pull && sudo systemctl restart klipper`
 
