@@ -17,7 +17,7 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 KLIPPER_DIR="${KLIPPER_DIR:-$HOME/klipper}"
 CONFIG_DIR="${CONFIG_DIR:-$HOME/printer_data/config}"
 KLIPPER_SERVICE="${KLIPPER_SERVICE:-klipper}"
-EXTRA="$KLIPPER_DIR/klippy/extras/menu_announce.py"
+EXTRA="$KLIPPER_DIR/klippy/extras/3dspeex.py"
 PRINTER_CFG="$CONFIG_DIR/printer.cfg"
 OUR_CFG="$CONFIG_DIR/3dspeex.cfg"
 INCLUDE_LINE="[include 3dspeex.cfg]"
@@ -41,9 +41,9 @@ have_klipper_service() {
     systemctl cat "$KLIPPER_SERVICE.service" >/dev/null 2>&1
 }
 
-# Files that configure [menu_announce] (only the ones Klipper reads here)
+# Files that configure [3dspeex] (only the ones Klipper reads here)
 configured_in() {
-    grep -ls '^\[menu_announce\]' "$PRINTER_CFG" "$OUR_CFG" || true
+    grep -ls '^\[3dspeex\]' "$PRINTER_CFG" "$OUR_CFG" || true
 }
 
 # Refuse to restart Klipper in the middle of a print.
@@ -88,7 +88,7 @@ if [ "$uninstall" = 1 ]; then
         mv "$OUR_CFG" "$OUR_CFG.$STAMP"
     fi
     if [ -n "$(configured_in)" ]; then
-        warn "printer.cfg still has a [menu_announce] section; remove it" \
+        warn "printer.cfg still has a [3dspeex] section; remove it" \
              "or Klipper will fail to start."
     fi
     restart_klipper
@@ -109,26 +109,26 @@ if [ -e "$EXTRA" ] && [ ! -L "$EXTRA" ]; then
     say "Moving existing $EXTRA to $EXTRA.$STAMP"
     mv "$EXTRA" "$EXTRA.$STAMP"
 fi
-say "Linking $EXTRA -> $REPO_DIR/menu_announce.py"
-ln -sfn "$REPO_DIR/menu_announce.py" "$EXTRA"
+say "Linking $EXTRA -> $REPO_DIR/3dspeex.py"
+ln -sfn "$REPO_DIR/3dspeex.py" "$EXTRA"
 # Keep Klipper's git checkout clean so Moonraker doesn't call it "dirty"
 exclude="$KLIPPER_DIR/.git/info/exclude"
 if [ -d "$KLIPPER_DIR/.git" ] &&
-        ! grep -qxF "klippy/extras/menu_announce.py" "$exclude" 2>/dev/null; then
+        ! grep -qxF "klippy/extras/3dspeex.py" "$exclude" 2>/dev/null; then
     mkdir -p "$(dirname "$exclude")"
-    echo "klippy/extras/menu_announce.py" >> "$exclude"
+    echo "klippy/extras/3dspeex.py" >> "$exclude"
 fi
 
 # 3. Config: a separate 3dspeex.cfg, included from printer.cfg. Adding
 #    the include at the top keeps clear of the SAVE_CONFIG block at the end.
 if [ -n "$(configured_in)" ]; then
-    say "[menu_announce] already configured in $(configured_in | xargs -n1 basename)"
+    say "[3dspeex] already configured in $(configured_in | xargs -n1 basename)"
 else
     say "Writing $OUR_CFG"
     cat > "$OUR_CFG" <<'EOF'
 # 3dspeex - spoken screen reader for the printer's LCD
 # https://github.com/daiverd/3dspeex
-[menu_announce]
+[3dspeex]
 # progress_step: 10     # say print progress every N percent (0 = off)
 # announce_info: False  # also say "//" info lines (chatty)
 EOF

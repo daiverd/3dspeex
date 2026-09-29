@@ -1,4 +1,4 @@
-# menu_announce.py - speak what the Klipper LCD shows, and what the printer
+# 3dspeex.py - speak what the Klipper LCD shows, and what the printer
 # is doing (espeak-ng by default; see speak() to change that)
 #
 # Part of 3dspeex: https://github.com/daiverd/3dspeex
@@ -9,7 +9,7 @@
 # Install with install.sh, or symlink this file into
 # ~/klipper/klippy/extras/ (see README.md).
 # Config (printer.cfg or an included file):
-#   [menu_announce]
+#   [3dspeex]
 #   progress_step: 10   # announce print progress every N percent (0 = off)
 #   announce_info: False  # also speak "// " info lines (chatty)
 #
@@ -153,7 +153,7 @@ INTERRUPT = object()  # queue key for navigation and screen reads
 AT_TEMP = 2.0  # same "close enough" the status screen uses
 
 
-class MenuAnnounce:
+class ScreenReader:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
@@ -187,13 +187,13 @@ class MenuAnnounce:
         hooked = []
         display = self.printer.lookup_object('display', None)
         if display is None:
-            logging.warning("menu_announce: no [display] found")
+            logging.warning("3dspeex: no [display] found")
         else:
             hooked += self._hook_menu(getattr(display, 'menu', None))
             hooked += self._hook_lcd(display.lcd_chip)
         self._init_watch()
         self.reactor.register_timer(self._poll, self.reactor.NOW)
-        logging.info("menu_announce: hooked %s", ",".join(hooked))
+        logging.info("3dspeex: hooked %s", ",".join(hooked))
         self._say("printer voice ready")
 
     # Menu navigation
@@ -262,7 +262,7 @@ class MenuAnnounce:
             if top is not self.last_top:
                 text = "%s: %s" % (self._name(top), text)
         except Exception:
-            logging.exception("menu_announce: failed to read menu state")
+            logging.exception("3dspeex: failed to read menu state")
             return
         self.last_top, self.last_editing, self.last = top, editing, text
         self._say(text, interrupt=True)
@@ -294,7 +294,7 @@ class MenuAnnounce:
             try:
                 after(ret, *args)
             except Exception:
-                logging.exception("menu_announce: lcd capture failed")
+                logging.exception("3dspeex: lcd capture failed")
             return ret
         return wrapper
 
@@ -370,7 +370,7 @@ class MenuAnnounce:
             self._check_print(eventtime)
             self._check_heaters(eventtime)
         except Exception:
-            logging.exception("menu_announce: status poll failed")
+            logging.exception("3dspeex: status poll failed")
         return eventtime + POLL_TIME
 
     def _check_message(self):
@@ -482,10 +482,10 @@ class MenuAnnounce:
             self.speaking = speak(text)
         except Exception:
             # never let speaking break the printer
-            logging.exception("menu_announce: speak failed")
+            logging.exception("3dspeex: speak failed")
             self.speaking = None
         return eventtime + SPEECH_CHECK_TIME
 
 
 def load_config(config):
-    return MenuAnnounce(config)
+    return ScreenReader(config)

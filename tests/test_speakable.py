@@ -3,20 +3,25 @@
 # Copyright (C) 2026  daiverd <david@rustytelephone.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
-"""Tests for the menu-name rewording in menu_announce.speakable().
+"""Tests for the menu-name rewording in speakable() in 3dspeex.py.
 
 Run: python3 tests/test_speakable.py
 
 Names are as the screen shows them (rendered from mainline Klipper's and
-Sovol's menu.cfg), with runs of spaces collapsed the way menu_announce
+Sovol's menu.cfg), with runs of spaces collapsed the way 3dspeex
 does before rewording. Add a case for every new rule, and a "must not
 change" case for anything it could wrongly match.
 """
+import importlib.util
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from menu_announce import speakable  # noqa: E402
+# "3dspeex" isn't a valid name for an import statement, so load it by path
+_path = os.path.join(os.path.dirname(__file__), '..', '3dspeex.py')
+_spec = importlib.util.spec_from_file_location('threedspeex', _path)
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+speakable = _mod.speakable
 
 REWORDED = [
     # temperature settings
