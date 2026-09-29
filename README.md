@@ -1,16 +1,23 @@
 # 3dspeex
 
-Speech output for Klipper printers with an LCD and rotary knob. It reads
-the menu aloud as you navigate, reads the status screen on request, and
-announces printer events such as heaters reaching temperature, print
-progress, M117 messages, and errors.
+A talking 3D printer. 3dspeex is a screen reader for 3D printers: it
+reads the printer's menu out loud as you turn the knob, tells you what's
+on the screen, and speaks up when the nozzle and bed are hot, how far
+along a print is, when it's done, and when something goes wrong.
 
-Speech is done with espeak-ng on the Klipper host.
+It lets blind and low-vision people use the printer's own controls
+without seeing the display, and it's handy for anyone who wants to hear
+what the printer is doing from across the room.
 
-Developed on a Sovol SV08 (stock Sovol Klipper). It uses only standard
-Klipper interfaces, so other printers with a Klipper `[display]` menu
-should work, but none have been tested yet. Reports are welcome.
-Touchscreen-only setups (KlipperScreen etc.) are not supported.
+The printer does the talking itself, through a speaker plugged into it
+(a small USB speaker works well). No phone, app, or computer is needed
+once it's set up.
+
+It works with printers that run Klipper firmware and have a screen with
+a control knob. It's built and used on a Sovol SV08. Other Klipper
+printers with a knob screen should work too, but haven't been tried yet;
+if you try one, please open an issue and say how it went. Printers that
+only have a touchscreen aren't supported.
 
 ## Usage
 
