@@ -80,6 +80,25 @@ def _heater_setting(word):
 
 
 TEMP_READING = r':\s*(?P<target>-?\d+)\s*\(\s*(?P<now>-?\d+)\s*\)$'
+MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July',
+          'August', 'September', 'October', 'November', 'December')
+
+
+def _date(m):
+    # "2025.11.14" -> "November 14, 2025" (Sovol's Information menu)
+    year, month, day = (int(g) for g in m.groups())
+    if not (1 <= month <= 12 and 1 <= day <= 31):
+        return m.group(0)
+    return "%s %d, %d" % (MONTHS[month - 1], day, year)
+
+
+def _millimeters(m):
+    return "%s millimeter%s" % (m.group(1), "" if m.group(1) == "1" else "s")
+
+
+SIGN_WORDS = {'++': 'plus plus', '+': 'plus', '--': 'minus minus',
+              '-': 'minus'}
+
 SPEECH_RULES = [
     (re.compile(r'^Ex(?P<n>\d)' + TEMP_READING), _heater_setting('nozzle')),
     (re.compile(r'^Bed' + TEMP_READING), _heater_setting('bed')),
@@ -88,15 +107,28 @@ SPEECH_RULES = [
      lambda m: "extruder" + ("" if m.group(1) == '0'
                              else " %d" % (int(m.group(1)) + 1))),
     (re.compile(r'^Move E:'), 'Move extruder:'),
+    # "Offset Z:0.125": without a space espeak says "colon". Only after a
+    # letter, so times like 01:23 are left alone.
+    (re.compile(r'(?<=[A-Za-z]):(?=\S)'), ': '),
     (re.compile(r'\b[Ff]il\b\.?'), 'filament '),   # Fil, Fil., fil
     (re.compile(r'\bLvl\b'), 'level'),
     (re.compile(r'\bFW\b'), 'firmware'),
     (re.compile(r'\bcal\.(?=\s|$)'), 'calibration'),
-    (re.compile(r'\bZoffset\b'), 'Z offset'),
+    # an axis glued to a word: "Zoffset" -> "Z offset", also Zhop, Zprobe
+    (re.compile(r'\b([XYZ])(?i:(offset|hop|probe|tilt|endstop))\b'),
+     r'\1 \2'),
     (re.compile(r'\bExhaustFan\b'), 'exhaust fan'),
-    # "Move X:005.0" -> "Move X:5.0". Only a decimal number ending the
+    (re.compile(r'\b([XYZE])/([XYZE])\b'), r'\1 and \2'),   # Home X/Y
+    (re.compile(r'\b(\d+(?:\.\d+)?) ?mm\b'), _millimeters),  # Move 10mm
+    # "Move X:005.0" -> "Move X: 5.0". Only a decimal number ending the
     # name, so codes like "Code: 012345" keep their digits.
     (re.compile(r':\s*([+-]?)0+(?=\d+\.\d+$)'), r': \1'),
+    # "+.01" -> "+0.01", or espeak says "plus dot zero one"
+    (re.compile(r'(?<![\w.])([+-]?)\.(?=\d)'), r'\g<1>0.'),
+    # a bare sign as the value (Test Z: ++ / - / --): espeak skips "-"
+    (re.compile(r':\s*(\+\+|--|\+|-)$'),
+     lambda m: ": " + SIGN_WORDS[m.group(1)]),
+    (re.compile(r'^(\d{4})\.(\d{1,2})\.(\d{1,2})$'), _date),
 ]
 # SD card listings: Klipper only lists these extensions, and names the
 # menu item with repr(filename), so allow a closing quote

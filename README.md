@@ -25,10 +25,16 @@ screen itself is unchanged:
 | `Ex0 fan` / `Ex1 fan` | extruder fan / extruder 2 fan |
 | `Load Fil. fast` | Load filament fast |
 | `Quad Gantry Lvl` / `Restart FW` | Quad Gantry level / Restart firmware |
+| `Move 10mm` / `Home X/Y` | Move 10 millimeters / Home X and Y |
+| `Offset Z:0.125` / `Calibrate Zoffset` | Offset Z: 0.125 / Calibrate Z offset |
+| `Test Z: -` / `Test Z: +.01` | Test Z: minus / Test Z: +0.01 |
 
 The rules are in `SPEECH_RULES` in `menu_announce.py`. They only touch
 menu names, leave SD card file names alone, and only match whole words
 or whole items, so they can't change things that merely look similar.
+`python3 tests/test_speakable.py` checks them against every name in
+mainline Klipper's and Sovol's menus plus lookalikes that must not
+change; add cases there when adding a rule.
 
 ```
 Main: Back          (menu opened)
@@ -204,7 +210,8 @@ ANNOUNCE MSG="Print done. Bed cooling."
 All speech goes through `speak()` near the top of `menu_announce.py`.
 
 - **Speed or voice:** edit `SPEAK_CMD`, for example
-  `['espeak-ng', '-s', '150', '-v', 'en-us', '--stdin']`.
+  `['espeak-ng', '-s', '150', '-v', 'en-us', '--stdin']`. The default
+  English voice is British, so Z is "zed"; `-v en-us` makes it "zee".
 - **A different speech engine or output:** replace `speak()`. It gets the
   text, must return straight away, and returns something with `poll()`
   (None while still talking) and `terminate()`, like a
