@@ -97,7 +97,9 @@ files from `audio/`:
 
 - `/etc/udev/rules.d/85-usb-audio-default.rules` sets the ALSA ID of any
   USB sound card to `usbaudio`
-- `/etc/asound.conf` makes `usbaudio` the default device
+- `/etc/asound.conf` makes `usbaudio` the default device, through
+  `dmix` so other programs (a beeper script, timelapse) can play at the
+  same time
 
 After installing, replug the USB device and check that it is listed as
 `usbaudio` in `/proc/asound/cards`.
@@ -109,9 +111,12 @@ no effect if PulseAudio or PipeWire is managing audio.
 
 ## Voice
 
-Speech goes through `speak()` in `screen_reader.py`. To change speed or
-voice, edit `SPEAK_CMD`. To use another speech engine, replace `speak()`;
-see its docstring.
+Klipper starts `speech_helper.py` once and sends it each line to say.
+It says one line at a time: a new line stops the current one, and waits
+for it to exit, before starting. To change speed or voice, edit
+`SPEAK_CMD` in `speech_helper.py`. To use another speech engine, either
+change `SPEAK_CMD` to any command that reads text on stdin, or replace
+the helper with a program that follows the protocol in its header.
 
 ## kcon
 
@@ -132,8 +137,8 @@ Klipper fails to start: check `klippy.log`. Make sure there is only one
 `[screen_reader]` section and that it has no unknown options.
 
 Last letter of each word cut off: some espeak-ng versions drop the final
-byte of stdin if it is not a newline. `speak()` appends one; keep this if
-you replace it.
+byte of stdin if it is not a newline. `speech_helper.py` appends one;
+keep this if you replace it.
 
 During timelapse rendering, the `TIMELAPSE_RENDER` macro's M117 spinner is
 spoken repeatedly.
@@ -141,6 +146,8 @@ spoken repeatedly.
 ## Tests
 
     python3 tests/test_speakable.py
+    python3 tests/test_speech_helper.py
+    python3 tests/test_speech_queue.py
 
 ## License
 

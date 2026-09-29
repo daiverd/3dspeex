@@ -1,5 +1,5 @@
 # screen_reader.py - speak what the Klipper LCD shows, and what the printer
-# is doing (espeak-ng by default; see speak() to change that)
+# is doing (through speech_helper.py; espeak-ng by default)
 #
 # Part of 3dspeex: https://github.com/daiverd/3dspeex
 # Copyright (C) 2026  daiverd <david@rustytelephone.net>
@@ -27,27 +27,18 @@
 # Navigation and screen reads interrupt whatever is being said, like a
 # screen reader. Events wait their turn; a newer event of the same kind
 # (another M117, the next progress step) replaces one still waiting.
+import fcntl
 import logging
+import os
 import re
+import signal
 import subprocess
+import sys
 
-SPEAK_CMD = ['espeak-ng', '-s', '170', '--stdin']
-
-
-def speak(text):
-    """Start saying text and return without waiting.
-
-    Return something with poll() (None while still talking) and
-    terminate(), like a subprocess.Popen, or None if there's nothing to
-    wait for. Replace this to change the voice or send the text elsewhere.
-    """
-    proc = subprocess.Popen(SPEAK_CMD, stdin=subprocess.PIPE,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL)
-    # espeak-ng --stdin drops the last byte of input, expecting a newline
-    proc.stdin.write((text + '\n').encode('utf-8'))
-    proc.stdin.close()
-    return proc
+# One long-running process does all the talking (see its header), so
+# Klipper never forks per line and only one line plays at a time.
+HELPER = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                      'speech_helper.py')
 
 
 # How LCD icons are read out
@@ -147,7 +138,9 @@ PRINT_STATES = {
     'cancelled': "print cancelled",
 }
 POLL_TIME = 1.0
-SPEECH_CHECK_TIME = 0.1
+HELPER_RETRY = 10.0     # wait this long before restarting a failed helper
+SPEECH_TIMEOUT = 120.0  # give up on a line the helper never finishes
+MAX_LINE_BYTES = 4000   # under PIPE_BUF, so each write is all or nothing
 MAX_QUEUE = 8
 INTERRUPT = object()  # queue key for navigation and screen reads
 AT_TEMP = 2.0  # same "close enough" the status screen uses
@@ -160,7 +153,13 @@ class ScreenReader:
         self.progress_step = config.getint('progress_step', 10,
                                            minval=0, maxval=100)
         self.announce_info = config.getboolean('announce_info', False)
-        self.speaking = None
+        self.helper = None
+        self.helper_handle = None
+        self.helper_buf = b''
+        self.helper_started = None
+        self.line_id = 0
+        self.speaking = None  # id of the line the helper is saying
+        self.speaking_since = 0.
         self.queue = []
         self.speech_timer = self.reactor.register_timer(self._speech_pump)
         self.last = None
@@ -176,6 +175,8 @@ class ScreenReader:
         self.printer.register_event_handler("klippy:ready", self._ready)
         self.printer.register_event_handler("klippy:shutdown",
                                             self._shutdown)
+        self.printer.register_event_handler("klippy:disconnect",
+                                            self._close_helper)
         gcode = self.printer.lookup_object('gcode')
         gcode.register_output_handler(self._gcode_output)
         gcode.register_command('ANNOUNCE', self.cmd_ANNOUNCE,
@@ -444,8 +445,8 @@ class ScreenReader:
     def cmd_ANNOUNCE_SCREEN(self, gcmd):
         self._say(self._screen_text(), interrupt=True)
 
-    # Speech queue. speak() only starts talking; this timer waits for each
-    # line to finish before starting the next, without blocking Klipper.
+    # Speech queue. Lines wait here; the helper gets one at a time and
+    # says "done <id>" when it finishes, which sends the next.
 
     def _say(self, text, interrupt=False, key=None):
         if not text:
@@ -464,27 +465,116 @@ class ScreenReader:
         self.reactor.update_timer(self.speech_timer, self.reactor.NOW)
 
     def _stop_speaking(self):
-        try:
-            if self.speaking is not None and self.speaking.poll() is None:
-                self.speaking.terminate()
-        except Exception:
-            pass
-        self.speaking = None
+        if self.speaking is not None:
+            self.speaking = None
+            self._send("stop")
 
     def _speech_pump(self, eventtime):
         try:
-            if self.speaking is not None and self.speaking.poll() is None:
-                return eventtime + SPEECH_CHECK_TIME
-            self.speaking = None
+            if self.speaking is not None:
+                if eventtime < self.speaking_since + SPEECH_TIMEOUT:
+                    return self.speaking_since + SPEECH_TIMEOUT
+                logging.warning("screen_reader: speech helper stuck,"
+                                " restarting it")
+                self._close_helper()
             if not self.queue:
                 return self.reactor.NEVER
+            if not self._start_helper(eventtime):
+                return self.helper_started + HELPER_RETRY
             key, text = self.queue.pop(0)
-            self.speaking = speak(text)
+            self.line_id += 1
+            text = " ".join(text.split()).encode('utf-8')[:MAX_LINE_BYTES]
+            text = text.decode('utf-8', 'ignore')
+            if self._send("say %d %s" % (self.line_id, text)):
+                self.speaking, self.speaking_since = self.line_id, eventtime
+                return eventtime + SPEECH_TIMEOUT
         except Exception:
             # never let speaking break the printer
-            logging.exception("screen_reader: speak failed")
+            logging.exception("screen_reader: speech failed")
+        return self.reactor.NEVER
+
+    # The helper process
+
+    def _start_helper(self, eventtime):
+        if self.helper is not None:
+            if self.helper.poll() is None:
+                return True
+            self._close_helper()
+        if (self.helper_started is not None
+                and eventtime < self.helper_started + HELPER_RETRY):
+            return False
+        self.helper_started = eventtime
+        try:
+            self.helper = subprocess.Popen(
+                [sys.executable, HELPER], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, start_new_session=True)
+        except Exception:
+            logging.exception("screen_reader: can't start %s", HELPER)
+            self.helper = None
+            return False
+        for f in (self.helper.stdin, self.helper.stdout):
+            flags = fcntl.fcntl(f.fileno(), fcntl.F_GETFL)
+            fcntl.fcntl(f.fileno(), fcntl.F_SETFL, flags | os.O_NONBLOCK)
+        self.helper_buf = b''
+        self.helper_handle = self.reactor.register_fd(
+            self.helper.stdout.fileno(), self._helper_read)
+        return True
+
+    def _send(self, line):
+        if self.helper is None:
+            return False
+        try:
+            os.write(self.helper.stdin.fileno(),
+                     (line + '\n').encode('utf-8'))
+            return True
+        except OSError as e:
+            # gone, or so far behind its pipe is full
+            logging.warning("screen_reader: speech helper: %s", e)
+            self._close_helper()
+            return False
+
+    def _helper_read(self, eventtime):
+        try:
+            data = os.read(self.helper.stdout.fileno(), 4096)
+        except BlockingIOError:
+            return
+        except OSError:
+            data = b''
+        if not data:
+            logging.warning("screen_reader: speech helper exited")
+            self._close_helper()
+            return
+        self.helper_buf += data
+        while b'\n' in self.helper_buf:
+            line, self.helper_buf = self.helper_buf.split(b'\n', 1)
+            if line == b"done %d" % (self.speaking or 0,):
+                self.speaking = None
+                self.reactor.update_timer(self.speech_timer,
+                                          self.reactor.NOW)
+
+    def _close_helper(self):
+        helper, self.helper = self.helper, None
+        if self.helper_handle is not None:
+            self.reactor.unregister_fd(self.helper_handle)
+            self.helper_handle = None
+        if self.speaking is not None:
             self.speaking = None
-        return eventtime + SPEECH_CHECK_TIME
+            self.reactor.update_timer(self.speech_timer, self.reactor.NOW)
+        if helper is None:
+            return
+        # Closing its input stops the speech and ends it; wait, so a new
+        # helper can never talk over this one.
+        try:
+            helper.stdin.close()
+        except OSError:
+            pass
+        try:
+            helper.wait(1.5)
+        except subprocess.TimeoutExpired:
+            # its own process group, so this gets espeak-ng too
+            os.killpg(helper.pid, signal.SIGKILL)
+            helper.wait()
+        helper.stdout.close()
 
 
 def load_config(config):
