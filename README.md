@@ -22,6 +22,7 @@ screen itself is unchanged:
 | `Ex0:  0 (  23)` | nozzle off, now 23° |
 | `Bed: 60 (  58)` | bed target 60, now 58° |
 | `Move E:+005.0` | Move extruder: +5.0 |
+| `Ex0 fan` / `Ex1 fan` | extruder fan / extruder 2 fan |
 | `Load Fil. fast` | Load filament fast |
 | `Quad Gantry Lvl` / `Restart FW` | Quad Gantry level / Restart firmware |
 

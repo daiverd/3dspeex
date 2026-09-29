@@ -83,6 +83,10 @@ TEMP_READING = r':\s*(?P<target>-?\d+)\s*\(\s*(?P<now>-?\d+)\s*\)$'
 SPEECH_RULES = [
     (re.compile(r'^Ex(?P<n>\d)' + TEMP_READING), _heater_setting('nozzle')),
     (re.compile(r'^Bed' + TEMP_READING), _heater_setting('bed')),
+    # any other "Ex0" / "Ex1" word, like "Ex0 fan" -> "extruder fan"
+    (re.compile(r'\bEx(\d)\b(?!:)'),
+     lambda m: "extruder" + ("" if m.group(1) == '0'
+                             else " %d" % (int(m.group(1)) + 1))),
     (re.compile(r'^Move E:'), 'Move extruder:'),
     (re.compile(r'\b[Ff]il\b\.?'), 'filament '),   # Fil, Fil., fil
     (re.compile(r'\bLvl\b'), 'level'),
