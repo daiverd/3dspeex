@@ -28,6 +28,7 @@
 # screen reader. Events wait their turn; a newer event of the same kind
 # (another M117, the next progress step) replaces one still waiting.
 import logging
+import re
 import subprocess
 
 SPEAK_CMD = ['espeak-ng', '-s', '170', '--stdin']
@@ -56,7 +57,55 @@ GLYPH_WORDS = {
     'feedrate': ' speed ', 'clock': ' time ', 'usb': ' usb ', 'sd': ' sd ',
     'degrees': '°', 'right_arrow': ' target ',
 }
-HEATER_WORDS = {'extruder': 'nozzle', 'heater_bed': 'bed'}
+HEATER_WORDS = {'extruder': 'nozzle', 'extruder1': 'nozzle 2',
+                'heater_bed': 'bed'}
+
+
+# Menu names are written for a 16-character screen, not for listening:
+# "Ex0:220 ( 215)", "Load Fil. fast", "Quad Gantry Lvl". These rules
+# reword them for speech only; the screen is unchanged. They apply to
+# menu names alone (not messages or the status screen), skip file names,
+# and each pattern is anchored or whole-word so it only hits the menu
+# wording it was written for (from Klipper's and Sovol's menu.cfg).
+
+def _heater_setting(word):
+    # "Ex0:220 ( 215)" -> "nozzle target 220, now 215°"; target 0 is "off"
+    def repl(m):
+        n = int(m.groupdict().get('n') or 0)
+        label = word if n == 0 else "%s %d" % (word, n + 1)
+        target = int(m.group('target'))
+        state = "off" if target == 0 else "target %d" % (target,)
+        return "%s %s, now %s°" % (label, state, m.group('now'))
+    return repl
+
+
+TEMP_READING = r':\s*(?P<target>-?\d+)\s*\(\s*(?P<now>-?\d+)\s*\)$'
+SPEECH_RULES = [
+    (re.compile(r'^Ex(?P<n>\d)' + TEMP_READING), _heater_setting('nozzle')),
+    (re.compile(r'^Bed' + TEMP_READING), _heater_setting('bed')),
+    (re.compile(r'^Move E:'), 'Move extruder:'),
+    (re.compile(r'\b[Ff]il\b\.?'), 'filament '),   # Fil, Fil., fil
+    (re.compile(r'\bLvl\b'), 'level'),
+    (re.compile(r'\bFW\b'), 'firmware'),
+    (re.compile(r'\bcal\.(?=\s|$)'), 'calibration'),
+    (re.compile(r'\bZoffset\b'), 'Z offset'),
+    (re.compile(r'\bExhaustFan\b'), 'exhaust fan'),
+    # "Move X:005.0" -> "Move X:5.0". Only a decimal number ending the
+    # name, so codes like "Code: 012345" keep their digits.
+    (re.compile(r':\s*([+-]?)0+(?=\d+\.\d+$)'), r': \1'),
+]
+# SD card listings: Klipper only lists these extensions, and names the
+# menu item with repr(filename), so allow a closing quote
+LOOKS_LIKE_FILE = re.compile(r'\.(gcode|gco|g)[\'"]?$', re.IGNORECASE)
+
+
+def speakable(name):
+    """Reword a menu name for speech (see SPEECH_RULES)."""
+    if LOOKS_LIKE_FILE.search(name):
+        return name
+    for pattern, repl in SPEECH_RULES:
+        name = pattern.sub(repl, name)
+    return " ".join(name.split())
 PRINT_STATES = {
     'paused': "print paused", 'complete': "print complete",
     'cancelled': "print cancelled",
@@ -152,7 +201,7 @@ class MenuAnnounce:
             text = element.render_name()
         except Exception:
             text = getattr(element, 'get_name', lambda: '?')()
-        return " ".join(str(text).split()).lstrip(">*~ ")
+        return speakable(" ".join(str(text).split()).lstrip(">*~ "))
 
     def _announce(self, menu):
         try:

@@ -13,6 +13,22 @@ Built and used on a Sovol SV08, but written for Klipper in general: see
 **In the menu:** every knob turn, click, and back says where you are.
 Entering a menu names it; turning within it names just the item.
 
+Menu names written for a small screen are reworded for listening; the
+screen itself is unchanged:
+
+| On screen | Spoken |
+|---|---|
+| `Ex0:220 ( 215)` | nozzle target 220, now 215° |
+| `Ex0:  0 (  23)` | nozzle off, now 23° |
+| `Bed: 60 (  58)` | bed target 60, now 58° |
+| `Move E:+005.0` | Move extruder: +5.0 |
+| `Load Fil. fast` | Load filament fast |
+| `Quad Gantry Lvl` / `Restart FW` | Quad Gantry level / Restart firmware |
+
+The rules are in `SPEECH_RULES` in `menu_announce.py`. They only touch
+menu names, leave SD card file names alone, and only match whole words
+or whole items, so they can't change things that merely look similar.
+
 ```
 Main: Back          (menu opened)
 Prepare             (turned)
