@@ -1,0 +1,4 @@
+# 3dspeex: give any USB sound card the ALSA ID "usbaudio", so
+# /etc/asound.conf can make it the default. Only cards on the USB bus
+# match; onboard codecs and HDMI audio keep their names.
+SUBSYSTEM=="sound", KERNEL=="card[0-9]*", SUBSYSTEMS=="usb", ACTION=="add", ATTR{id}="usbaudio"
