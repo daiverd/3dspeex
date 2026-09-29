@@ -24,7 +24,7 @@ Touchscreen-only setups (KlipperScreen etc.) are not supported.
 Abbreviated menu labels are expanded for speech, e.g. `Ex0:220 ( 215)` is
 read as "nozzle target 220, now 215°" and `Load Fil. fast` as "Load
 filament fast". The display is not changed. See `SPEECH_RULES` in
-`3dspeex.py`.
+`screen_reader.py`.
 
 Events announced:
 
@@ -49,8 +49,8 @@ On the printer, as the user Klipper runs as:
     ./install.sh
 
 The script installs espeak-ng and alsa-utils (via apt) if needed,
-symlinks `3dspeex.py` into `~/klipper/klippy/extras/`, creates
-`~/printer_data/config/3dspeex.cfg` and includes it from `printer.cfg`
+symlinks `screen_reader.py` into `~/klipper/klippy/extras/`, creates
+`~/printer_data/config/screen_reader.cfg` and includes it from `printer.cfg`
 (a backup of `printer.cfg` is made), adds the Klipper user to the `audio`
 group, and restarts Klipper. It will not restart Klipper while a print is
 running.
@@ -70,13 +70,13 @@ To update:
 
 ### Manual installation
 
-    ln -s ~/3dspeex/3dspeex.py ~/klipper/klippy/extras/
+    ln -s ~/3dspeex/screen_reader.py ~/klipper/klippy/extras/
 
-and add a `[3dspeex]` section to `printer.cfg`.
+and add a `[screen_reader]` section to `printer.cfg`.
 
 ## Configuration
 
-    [3dspeex]
+    [screen_reader]
     #progress_step: 10
     #   Announce print progress every N percent. 0 disables.
     #announce_info: False
@@ -109,7 +109,7 @@ no effect if PulseAudio or PipeWire is managing audio.
 
 ## Voice
 
-Speech goes through `speak()` in `3dspeex.py`. To change speed or
+Speech goes through `speak()` in `screen_reader.py`. To change speed or
 voice, edit `SPEAK_CMD`. To use another speech engine, replace `speak()`;
 see its docstring.
 
@@ -129,7 +129,7 @@ session:
 If this fails, add the user to the `audio` group, or see USB audio above.
 
 Klipper fails to start: check `klippy.log`. Make sure there is only one
-`[3dspeex]` section and that it has no unknown options.
+`[screen_reader]` section and that it has no unknown options.
 
 Last letter of each word cut off: some espeak-ng versions drop the final
 byte of stdin if it is not a newline. `speak()` appends one; keep this if

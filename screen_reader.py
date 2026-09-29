@@ -1,4 +1,4 @@
-# 3dspeex.py - speak what the Klipper LCD shows, and what the printer
+# screen_reader.py - speak what the Klipper LCD shows, and what the printer
 # is doing (espeak-ng by default; see speak() to change that)
 #
 # Part of 3dspeex: https://github.com/daiverd/3dspeex
@@ -9,7 +9,7 @@
 # Install with install.sh, or symlink this file into
 # ~/klipper/klippy/extras/ (see README.md).
 # Config (printer.cfg or an included file):
-#   [3dspeex]
+#   [screen_reader]
 #   progress_step: 10   # announce print progress every N percent (0 = off)
 #   announce_info: False  # also speak "// " info lines (chatty)
 #
@@ -187,13 +187,13 @@ class ScreenReader:
         hooked = []
         display = self.printer.lookup_object('display', None)
         if display is None:
-            logging.warning("3dspeex: no [display] found")
+            logging.warning("screen_reader: no [display] found")
         else:
             hooked += self._hook_menu(getattr(display, 'menu', None))
             hooked += self._hook_lcd(display.lcd_chip)
         self._init_watch()
         self.reactor.register_timer(self._poll, self.reactor.NOW)
-        logging.info("3dspeex: hooked %s", ",".join(hooked))
+        logging.info("screen_reader: hooked %s", ",".join(hooked))
         self._say("printer voice ready")
 
     # Menu navigation
@@ -262,7 +262,7 @@ class ScreenReader:
             if top is not self.last_top:
                 text = "%s: %s" % (self._name(top), text)
         except Exception:
-            logging.exception("3dspeex: failed to read menu state")
+            logging.exception("screen_reader: failed to read menu state")
             return
         self.last_top, self.last_editing, self.last = top, editing, text
         self._say(text, interrupt=True)
@@ -294,7 +294,7 @@ class ScreenReader:
             try:
                 after(ret, *args)
             except Exception:
-                logging.exception("3dspeex: lcd capture failed")
+                logging.exception("screen_reader: lcd capture failed")
             return ret
         return wrapper
 
@@ -370,7 +370,7 @@ class ScreenReader:
             self._check_print(eventtime)
             self._check_heaters(eventtime)
         except Exception:
-            logging.exception("3dspeex: status poll failed")
+            logging.exception("screen_reader: status poll failed")
         return eventtime + POLL_TIME
 
     def _check_message(self):
@@ -482,7 +482,7 @@ class ScreenReader:
             self.speaking = speak(text)
         except Exception:
             # never let speaking break the printer
-            logging.exception("3dspeex: speak failed")
+            logging.exception("screen_reader: speak failed")
             self.speaking = None
         return eventtime + SPEECH_CHECK_TIME
 

@@ -17,10 +17,10 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 KLIPPER_DIR="${KLIPPER_DIR:-$HOME/klipper}"
 CONFIG_DIR="${CONFIG_DIR:-$HOME/printer_data/config}"
 KLIPPER_SERVICE="${KLIPPER_SERVICE:-klipper}"
-EXTRA="$KLIPPER_DIR/klippy/extras/3dspeex.py"
+EXTRA="$KLIPPER_DIR/klippy/extras/screen_reader.py"
 PRINTER_CFG="$CONFIG_DIR/printer.cfg"
-OUR_CFG="$CONFIG_DIR/3dspeex.cfg"
-INCLUDE_LINE="[include 3dspeex.cfg]"
+OUR_CFG="$CONFIG_DIR/screen_reader.cfg"
+INCLUDE_LINE="[include screen_reader.cfg]"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 usb_audio=0 restart=1 uninstall=0
@@ -41,9 +41,9 @@ have_klipper_service() {
     systemctl cat "$KLIPPER_SERVICE.service" >/dev/null 2>&1
 }
 
-# Files that configure [3dspeex] (only the ones Klipper reads here)
+# Files that configure [screen_reader] (only the ones Klipper reads here)
 configured_in() {
-    grep -ls '^\[3dspeex\]' "$PRINTER_CFG" "$OUR_CFG" || true
+    grep -ls '^\[screen_reader\]' "$PRINTER_CFG" "$OUR_CFG" || true
 }
 
 # Refuse to restart Klipper in the middle of a print.
@@ -88,7 +88,7 @@ if [ "$uninstall" = 1 ]; then
         mv "$OUR_CFG" "$OUR_CFG.$STAMP"
     fi
     if [ -n "$(configured_in)" ]; then
-        warn "printer.cfg still has a [3dspeex] section; remove it" \
+        warn "printer.cfg still has a [screen_reader] section; remove it" \
              "or Klipper will fail to start."
     fi
     restart_klipper
@@ -109,26 +109,26 @@ if [ -e "$EXTRA" ] && [ ! -L "$EXTRA" ]; then
     say "Moving existing $EXTRA to $EXTRA.$STAMP"
     mv "$EXTRA" "$EXTRA.$STAMP"
 fi
-say "Linking $EXTRA -> $REPO_DIR/3dspeex.py"
-ln -sfn "$REPO_DIR/3dspeex.py" "$EXTRA"
+say "Linking $EXTRA -> $REPO_DIR/screen_reader.py"
+ln -sfn "$REPO_DIR/screen_reader.py" "$EXTRA"
 # Keep Klipper's git checkout clean so Moonraker doesn't call it "dirty"
 exclude="$KLIPPER_DIR/.git/info/exclude"
 if [ -d "$KLIPPER_DIR/.git" ] &&
-        ! grep -qxF "klippy/extras/3dspeex.py" "$exclude" 2>/dev/null; then
+        ! grep -qxF "klippy/extras/screen_reader.py" "$exclude" 2>/dev/null; then
     mkdir -p "$(dirname "$exclude")"
-    echo "klippy/extras/3dspeex.py" >> "$exclude"
+    echo "klippy/extras/screen_reader.py" >> "$exclude"
 fi
 
-# 3. Config: a separate 3dspeex.cfg, included from printer.cfg. Adding
+# 3. Config: a separate screen_reader.cfg, included from printer.cfg. Adding
 #    the include at the top keeps clear of the SAVE_CONFIG block at the end.
 if [ -n "$(configured_in)" ]; then
-    say "[3dspeex] already configured in $(configured_in | xargs -n1 basename)"
+    say "[screen_reader] already configured in $(configured_in | xargs -n1 basename)"
 else
     say "Writing $OUR_CFG"
     cat > "$OUR_CFG" <<'EOF'
 # 3dspeex - spoken screen reader for the printer's LCD
 # https://github.com/daiverd/3dspeex
-[3dspeex]
+[screen_reader]
 # progress_step: 10     # say print progress every N percent (0 = off)
 # announce_info: False  # also say "//" info lines (chatty)
 EOF
