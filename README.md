@@ -210,8 +210,7 @@ ANNOUNCE MSG="Print done. Bed cooling."
 All speech goes through `speak()` near the top of `menu_announce.py`.
 
 - **Speed or voice:** edit `SPEAK_CMD`, for example
-  `['espeak-ng', '-s', '150', '-v', 'en-us', '--stdin']`. The default
-  English voice is British, so Z is "zed"; `-v en-us` makes it "zee".
+  `['espeak-ng', '-s', '150', '-v', 'en-us', '--stdin']`.
 - **A different speech engine or output:** replace `speak()`. It gets the
   text, must return straight away, and returns something with `poll()`
   (None while still talking) and `terminate()`, like a
