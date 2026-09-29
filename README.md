@@ -212,3 +212,7 @@ and each frame is a new message. A known rough edge.
 Speech runs in separate `espeak-ng` processes checked from Klipper's event
 loop, so it never blocks the printer, and every hook is wrapped so a
 failure is only logged.
+
+## License
+
+GPLv3, the same as Klipper. See [LICENSE](LICENSE).
