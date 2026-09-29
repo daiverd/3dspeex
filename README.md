@@ -9,7 +9,7 @@ Speech plays through a speaker connected to the printer, such as a USB
 speaker. Everything runs on the printer itself.
 
 Developed on a Sovol SV08. Other Klipper printers with a screen and
-control knob should work but haven't been tested; reports are welcome.
+control knob should work but haven't been tested yet; reports are welcome.
 Touchscreen-only printers are not supported.
 
 ## Usage
