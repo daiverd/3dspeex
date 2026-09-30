@@ -26,8 +26,8 @@ Touchscreen-only printers are not supported yet.
   `screen_reader.py`.
 - The whole status screen is read when the menu closes, and by
   `ANNOUNCE_SCREEN`.
-- Menu speech interrupts whatever is being said. Other announcements are
-  queued.
+- Knob speech (menu and status items) interrupts whatever is being said.
+  Other announcements are queued.
 
 Abbreviated menu labels are expanded for speech, e.g. `Ex0:220 ( 215)` is
 read as "nozzle target 220, now 215°" and `Load Fil. fast` as "Load
@@ -72,15 +72,21 @@ Options:
 For non-standard locations, set `KLIPPER_DIR`, `CONFIG_DIR`, or
 `KLIPPER_SERVICE` (e.g. `klipper-1` for KIAUH multi-instance setups).
 
-To update:
+To update, pull and re-run the installer with the options you used
+before. It keeps your `screen_reader.cfg`, and reinstalls the
+`--usb-audio` files in case they changed:
 
-    cd ~/3dspeex && git pull && sudo systemctl restart klipper
+    cd ~/3dspeex && git pull && ./install.sh --usb-audio
+
+(leave out `--usb-audio` if you didn't use it).
 
 ### Manual installation
 
     ln -s ~/3dspeex/screen_reader.py ~/klipper/klippy/extras/
 
-and add a `[screen_reader]` section to `printer.cfg`.
+and add a `[screen_reader]` section to `printer.cfg`. Link rather than
+copy: `screen_reader.py` finds `speech_helper.py` next to its real
+location.
 
 ## Configuration
 
@@ -106,8 +112,7 @@ files from `audio/`:
 - `/etc/udev/rules.d/85-usb-audio-default.rules` sets the ALSA ID of any
   USB sound card to `usbaudio`
 - `/etc/asound.conf` makes `usbaudio` the default device, through
-  `dmix` so other programs (a beeper script, timelapse) can play at the
-  same time
+  `dmix` so other programs can play sound at the same time
 
 After installing, replug the USB device and check that it is listed as
 `usbaudio` in `/proc/asound/cards`.
@@ -140,9 +145,17 @@ session:
     sudo systemd-run --uid=sovol --pty --quiet espeak-ng hello
 
 If this fails, add the user to the `audio` group, or see USB audio above.
+If it works but the printer is silent, look for `screen_reader: speech
+helper` lines in `klippy.log`; the helper is restarted every 10 seconds
+while it keeps failing.
 
 Klipper fails to start: check `klippy.log`. Make sure there is only one
 `[screen_reader]` section and that it has no unknown options.
+
+`git pull` refuses to update: you have edited a file such as
+`speech_helper.py` (`SPEAK_CMD`) or `screen_reader.py`
+(`STATUS_ORDER`). Save your change with `git stash`, pull, then
+`git stash pop` to put it back.
 
 Last letter of each word cut off: some espeak-ng versions drop the final
 byte of stdin if it is not a newline. `speech_helper.py` appends one;
