@@ -16,9 +16,13 @@
 # Menu: each knob turn / click / back says where you are. Entering a menu
 # names it, turning within it names just the item, e.g.
 #   "Prepare: Back"   "Move Z"   "Speed: 100%, editing"   "Speed: 105%, done"
-# Status screen (menu closed): the screen is read out when the menu
-# closes, and whenever the knob is turned, e.g.
+# Status screen (menu closed): the whole screen is read out when the
+# menu closes, e.g.
 #   "nozzle 25° fan 0%. bed 24° speed 100%. 0% 00:00. Ready"
+# Turning the knob steps through it one item at a time, most interesting
+# first (see STATUS_ORDER): the way that moves down a menu goes to the
+# next item, the other way back. After a minute without turning, it
+# starts again from the top.
 # Events: M117 messages, print state and progress, heaters reaching
 # target, "!!" errors, RESPOND/M118 echoes, and shutdowns.
 # G-code: ANNOUNCE MSG="text"   say a line (for your own macros)
@@ -145,6 +149,21 @@ MAX_QUEUE = 8
 INTERRUPT = object()  # queue key for navigation and screen reads
 AT_TEMP = 2.0  # same "close enough" the status screen uses
 
+# Status screen items in the order the knob steps through them, most
+# interesting first, named as in Klipper's display.cfg ([display_data
+# <group> <item>]). Items not listed here (a vendor's or your own) come
+# first, since they're what's unusual about this printer; items that
+# draw no text, like the progress bar or a missing second extruder, are
+# skipped.
+STATUS_ORDER = [
+    'print_status', 'print_progress', 'printing_time',
+    'extruder', 'extruder1', 'heater_bed',
+    'fan', 'fan_generic', 'speed_factor',
+]
+# Said before items that have no icon to name them
+STATUS_LABELS = {'print_progress': 'progress', 'printing_time': 'time'}
+STATUS_RESET = 60.0  # seconds without turning before starting over
+
 
 class ScreenReader:
     def __init__(self, config):
@@ -172,6 +191,12 @@ class ScreenReader:
         self.grid = self._blank_grid()
         self.screen = []
         self.pending_read = None  # prefix to say before the next screen
+        self.display = None
+        self.frame_items = []   # (row, col, text) drawn in this frame
+        self.status_items = []  # (item name, words) in STATUS_ORDER
+        self.pending_step = None  # +1 / -1 to step on the next frame
+        self.status_pos = -1    # -1 is before the first item
+        self.last_step = 0.
         self.printer.register_event_handler("klippy:ready", self._ready)
         self.printer.register_event_handler("klippy:shutdown",
                                             self._shutdown)
@@ -192,6 +217,7 @@ class ScreenReader:
         else:
             hooked += self._hook_menu(getattr(display, 'menu', None))
             hooked += self._hook_lcd(display.lcd_chip)
+            hooked += self._hook_draw(display)
         self._init_watch()
         self.reactor.register_timer(self._poll, self.reactor.NOW)
         logging.info("screen_reader: hooked %s", ",".join(hooked))
@@ -244,13 +270,18 @@ class ScreenReader:
         try:
             if not menu.is_running():
                 # A knob turn with the menu closed does nothing on the
-                # printer, so use it as "read me the screen".
+                # printer, so use it to step through the status screen,
+                # in the direction that moves through a menu the same way.
                 if self.outer in ('up', 'down'):
-                    self.pending_read = ""
+                    step = 1 if self.outer == 'down' else -1
+                    if getattr(menu, '_reverse_navigation', False):
+                        step = -step
+                    self.pending_step = step
                     return
                 self.last_top = None
                 if self.last != "menu closed":
                     self.last = "menu closed"
+                    self.status_pos = -1
                     # said together with the status screen once drawn
                     self.pending_read = "menu closed. "
                 return
@@ -305,6 +336,7 @@ class ScreenReader:
 
     def _lcd_clear(self, ret):
         self.grid = self._blank_grid()
+        self.frame_items = []
 
     def _put(self, x, y, cells):
         if 0 <= y < len(self.grid):
@@ -328,12 +360,85 @@ class ScreenReader:
         if self.pending_read is not None and not self._menu_running():
             prefix, self.pending_read = self.pending_read, None
             self._say(prefix + self._screen_text(), interrupt=True)
+        if not self._menu_running():
+            self.status_items = self._status_items()
+            if self.pending_step is not None:
+                step, self.pending_step = self.pending_step, None
+                self._step_status(step)
 
     def _menu_running(self):
         return self.menu is not None and self.menu.is_running()
 
     def _screen_text(self):
         return ". ".join(r for r in self.screen if r) or "screen blank"
+
+    # Status screen items. Each [display_data] item is drawn with one
+    # display.draw_text() call, so capturing those gives each item's text
+    # separately, with its icons still named (~extruder~ 25~degrees~).
+
+    def _hook_draw(self, display):
+        orig = getattr(display, 'draw_text', None)
+        if not callable(orig):
+            return []
+        self.display = display
+
+        def wrapper(*args):
+            try:
+                row, col, text = args[:3]
+                self.frame_items.append((row, col, text))
+            except Exception:
+                logging.exception("screen_reader: draw capture failed")
+            return orig(*args)
+        display.draw_text = wrapper
+        return ['display.draw_text']
+
+    def _item_names(self):
+        # Templates are named "display_data <group> <item>:text"
+        group = getattr(self.display, 'show_data_group', None)
+        names = {}
+        for row, col, template in getattr(group, 'data_items', []):
+            name = getattr(template, 'name', '').rsplit(':', 1)[0].split()
+            if name:
+                names[(row, col)] = name[-1]
+        return names
+
+    def _status_items(self):
+        names = self._item_names()
+        items = []
+        for row, col, text in self.frame_items:
+            name = names.get((row, col))
+            words = self._item_words(name, str(text))
+            if words:
+                items.append((name, words))
+
+        def rank(item):
+            if item[0] in STATUS_ORDER:
+                return STATUS_ORDER.index(item[0])
+            return -1  # not planned for: first
+        return sorted(items, key=rank)  # stable, so screen order otherwise
+
+    def _item_words(self, name, text):
+        parts = text.split('~')
+        # odd parts are icon names
+        for i in range(1, len(parts), 2):
+            parts[i] = GLYPH_WORDS.get(parts[i], ' %s ' % (parts[i],))
+        words = " ".join("".join(parts).split())
+        if words and len(parts) == 1 and name in STATUS_LABELS:
+            words = "%s %s" % (STATUS_LABELS[name], words)
+        return words
+
+    def _step_status(self, step):
+        items = self.status_items
+        if not items:
+            # nothing recognised; read the screen as it is
+            self._say(self._screen_text(), interrupt=True)
+            return
+        now = self.reactor.monotonic()
+        if now > self.last_step + STATUS_RESET:
+            self.status_pos = -1
+        self.last_step = now
+        self.status_pos = max(0, min(len(items) - 1, self.status_pos + step))
+        self._say(items[self.status_pos][1], interrupt=True)
 
     # Printer events
 

@@ -16,8 +16,16 @@ Touchscreen-only printers are not supported yet.
 
 - Turning or clicking the knob in the menu speaks the selected item. The
   menu name is included when you enter a menu.
-- With the menu closed, turn the knob to hear the status screen. It is
-  also read when the menu closes.
+- With the menu closed, turn the knob to step through the status screen
+  one item at a time, most interesting first: the print status or
+  message, progress, print time, then temperatures, fan and speed.
+  Turning the way that moves down a menu goes to the next item; the
+  other way goes back. After a minute without turning, it starts again
+  from the top. Items the reader doesn't know about, like ones a printer
+  maker added, come first. The order is `STATUS_ORDER` in
+  `screen_reader.py`.
+- The whole status screen is read when the menu closes, and by
+  `ANNOUNCE_SCREEN`.
 - Menu speech interrupts whatever is being said. Other announcements are
   queued.
 
@@ -148,6 +156,7 @@ spoken repeatedly.
     python3 tests/test_speakable.py
     python3 tests/test_speech_helper.py
     python3 tests/test_speech_queue.py
+    python3 tests/test_status_steps.py
 
 ## License
 
