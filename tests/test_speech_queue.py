@@ -12,6 +12,7 @@ from test_speech_helper, so no printer or sound card is needed.
 """
 import os
 import select
+import signal
 import sys
 import tempfile
 import time
@@ -83,17 +84,17 @@ class Printer:
 
 
 class Config:
-    def __init__(self):
+    def __init__(self, **options):
         self.printer = Printer()
+        self.options = options
 
     def get_printer(self):
         return self.printer
 
-    def getint(self, name, default, **kwargs):
-        return default
+    def get(self, name, default, **kwargs):
+        return self.options.get(name, default)
 
-    def getboolean(self, name, default):
-        return default
+    getint = getboolean = get
 
 
 def make_reader(tmp, secs):
@@ -127,7 +128,7 @@ def test_scrolling_then_event():
         assert idle(reader)
         helper = reader.helper
         reader._close_helper()  # klippy:disconnect
-        assert helper.poll() is not None
+        helper.wait(1)  # killed
         lines = log(tmp)
         assert "OVERLAP" not in lines, lines
         assert lines[-2:] == ["said item 15", "said bed at 60"], lines
@@ -147,6 +148,29 @@ def test_restarts_dead_helper():
         assert reader.helper is not None and reader.helper is not first
         reader._close_helper()
         assert log(tmp) == ["said one", "said two"], log(tmp)
+
+
+def test_voice_settings():
+    reader = screen_reader.ScreenReader(
+        Config(speech_rate=200, volume=150, voice='en-us'))
+    assert reader.helper_args == ['--rate', '200', '--volume', '150',
+                                  '--voice', 'en-us'], reader.helper_args
+    reader = screen_reader.ScreenReader(Config())
+    assert reader.helper_args == ['--rate', '170', '--volume', '100']
+
+
+def test_stuck_helper_closes_at_once():
+    with tempfile.TemporaryDirectory() as tmp:
+        reader, reactor = make_reader(tmp, 30)
+        reader._say("a long line")
+        reactor.run(2, lambda: reader.speaking is not None)
+        reactor.run(0.3)
+        helper = reader.helper
+        helper.send_signal(signal.SIGSTOP)  # frozen: can't read or exit
+        start = time.monotonic()
+        reader._close_helper()
+        assert time.monotonic() - start < 0.2
+        helper.wait(1)  # killed despite being stopped
 
 
 if __name__ == '__main__':

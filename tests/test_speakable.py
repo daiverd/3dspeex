@@ -64,6 +64,16 @@ REWORDED = [
     ("Move 1mm", "Move 1 millimeter"),
     ("Move 0.1mm", "Move 0.1 millimeters"),
     ("2025.11.14", "November 14, 2025"),
+    # SD card file names: only the extension goes, and repr() quotes
+    ("Fil_holder.gcode", "Fil_holder"),
+    ("'Lvl test.gcode'", "Lvl test"),
+    ("FW update.GCO", "FW update"),
+    ("Fil cal.g", "Fil cal"),
+    ("Recal.gcode", "Recal"),
+    ("Move 10mm.gcode", "Move 10mm"),
+    ("2025.11.14.gcode", "2025.11.14"),
+    ("Test Z: -.g", "Test Z: -"),
+    ("Benchy_0.2mm_PLA_1h2m.gcode", "Benchy_0.2mm_PLA_1h2m"),
 ]
 
 UNCHANGED = [
@@ -78,9 +88,6 @@ UNCHANGED = [
     "Exhaust fan", "Profile fil2", "FWD motion", "calibrate", "Zeta",
     "Zoffsets", "XYZ/ABC", "Home X/YZ", "5mmx", "Printed 01:23",
     "2025.13.40", "v1.2.3", "Z-offset",
-    # SD card file names, with and without repr() quotes
-    "Fil_holder.gcode", "'Lvl test.gcode'", "FW update.GCO", "Fil cal.g",
-    "Recal.gcode", "Move 10mm.gcode", "2025.11.14.gcode", "Test Z: -.g",
 ]
 
 

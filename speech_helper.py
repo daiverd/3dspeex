@@ -17,16 +17,20 @@
 #   out: done <id>         that line finished or was stopped
 # End of input stops speech and exits.
 #
-# Usage: speech_helper.py [command ...]   (default: SPEAK_CMD)
-# The command gets the text on stdin. To use another speech engine,
-# change SPEAK_CMD, or replace this file with anything that speaks the
-# same protocol.
+# Usage: speech_helper.py [--rate N] [--voice NAME] [--volume N]
+#        speech_helper.py command ...
+# The first form uses espeak-ng; screen_reader passes the settings from
+# [screen_reader]. The second runs any command that reads the text on
+# stdin, ignoring those settings. To use another speech engine, replace
+# this file with anything that speaks the same protocol.
+import argparse
 import os
 import select
 import subprocess
 import sys
 
-SPEAK_CMD = ['espeak-ng', '-s', '170', '--stdin']
+DEFAULT_RATE = 170    # words per minute
+DEFAULT_VOLUME = 100  # 0 to 200
 CHECK_TIME = 0.05  # how often to check whether speech has finished
 STOP_WAIT = 1.0    # how long to let a stopped command exit before kill
 
@@ -98,8 +102,23 @@ def handle(speaker, line):
         log("unknown command %r" % (cmd,))
 
 
+def speak_cmd(argv):
+    parser = argparse.ArgumentParser(prog='speech_helper.py')
+    parser.add_argument('--rate', type=int, default=DEFAULT_RATE)
+    parser.add_argument('--voice')
+    parser.add_argument('--volume', type=int, default=DEFAULT_VOLUME)
+    parser.add_argument('command', nargs=argparse.REMAINDER)
+    args = parser.parse_args(argv[1:])
+    if args.command:
+        return args.command
+    cmd = ['espeak-ng', '-s', str(args.rate), '-a', str(args.volume)]
+    if args.voice:
+        cmd += ['-v', args.voice]
+    return cmd + ['--stdin']
+
+
 def main(argv):
-    speaker = Speaker(argv[1:] or SPEAK_CMD)
+    speaker = Speaker(speak_cmd(argv))
     fd = sys.stdin.fileno()
     buf = b''
     try:

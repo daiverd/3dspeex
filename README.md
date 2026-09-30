@@ -97,6 +97,13 @@ location.
     #announce_info: False
     #   Also speak "//" info lines. These are frequent during QGL and
     #   bed mesh calibration.
+    #speech_rate: 170
+    #   Words per minute, 80 to 500.
+    #voice:
+    #   An espeak-ng voice, e.g. en-us or en-gb. The default is
+    #   espeak-ng's. List them with: espeak-ng --voices
+    #volume: 100
+    #   0 to 200.
 
 ## G-Code commands
 
@@ -125,11 +132,12 @@ no effect if PulseAudio or PipeWire is managing audio.
 
 ## Voice
 
+Set the speed, voice and volume in `screen_reader.cfg` (see
+Configuration), then restart Klipper.
+
 Klipper starts `speech_helper.py` once and sends it each line to say.
 It says one line at a time: a new line stops the current one, and waits
-for it to exit, before starting. To change speed or voice, edit
-`SPEAK_CMD` in `speech_helper.py`. To use another speech engine, either
-change `SPEAK_CMD` to any command that reads text on stdin, or replace
+for it to exit, before starting. To use another speech engine, replace
 the helper with a program that follows the protocol in its header.
 
 ## kcon
@@ -153,9 +161,8 @@ while it keeps failing.
 Klipper fails to start: check `klippy.log`. Make sure there is only one
 `[screen_reader]` section and that it has no unknown options.
 
-`git pull` refuses to update: you have edited a file such as
-`speech_helper.py` (`SPEAK_CMD`) or `screen_reader.py`
-(`STATUS_ORDER`). Save your change with `git stash`, pull, then
+`git pull` refuses to update: you have edited a file in the repo, such
+as `STATUS_ORDER` in `screen_reader.py`. Save your change with `git stash`, pull, then
 `git stash pop` to put it back.
 
 Last letter of each word cut off: some espeak-ng versions drop the final

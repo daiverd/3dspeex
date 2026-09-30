@@ -131,6 +131,9 @@ else
 [screen_reader]
 # progress_step: 10     # say print progress every N percent (0 = off)
 # announce_info: False  # also say "//" info lines (chatty)
+# speech_rate: 170      # words per minute
+# voice: en-us          # an espeak-ng voice (espeak-ng --voices)
+# volume: 100           # 0 to 200
 EOF
     say "Adding $INCLUDE_LINE to printer.cfg (backup: printer.cfg.$STAMP)"
     cp "$PRINTER_CFG" "$PRINTER_CFG.$STAMP"

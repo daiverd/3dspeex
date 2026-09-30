@@ -29,7 +29,7 @@ SV08_SCREEN = [
     (3, 0, 'print_status', 'benchy.gcode'),
 ]
 SV08_ORDER = [
-    "benchy.gcode", "progress 45%", "time 01:07",
+    "benchy", "progress 45%", "time 1 hour 7 minutes",
     "nozzle 180 target 215°", "bed 58 target 60°", "fan 0%", "speed 100%",
 ]
 
@@ -166,6 +166,38 @@ def test_reverse_navigation():
     reader.menu._reverse_navigation = True
     assert turn(reader, 'up') == SV08_ORDER[0]
     assert turn(reader, 'up') == SV08_ORDER[1]
+
+
+def item(name, text):
+    reader = make_reader([])
+    return reader._item_words(name, text)
+
+
+def test_print_time_words():
+    assert item('printing_time', ' 00:00') == "time 0 minutes"
+    assert item('printing_time', ' 00:01') == "time 1 minute"
+    assert item('printing_time', ' 01:00') == "time 1 hour"
+    assert item('printing_time', ' 12:59') == "time 12 hours 59 minutes"
+    # 20x4 displays name it with the clock icon
+    assert item('printing_time', '~clock~ 02:30') == "time 2 hours 30 minutes"
+    # a message's clock time is left alone
+    assert item('print_status', 'Done at 12:30') == "Done at 12:30"
+
+
+def test_file_names():
+    assert item('print_status', 'benchy.gcode') == "benchy"
+    assert item('print_status', 'Ready') == "Ready"
+    assert item('print_status', 'Version 1.g') == "Version 1"
+
+
+def test_whole_screen_same_words():
+    reader = make_reader(SV08_SCREEN)
+    del reader._screen_text  # read the real screen
+    turn(reader, 'up')
+    assert reader.queue == []  # turn() took it; read it again directly
+    assert reader._screen_text() == (
+        "nozzle 180 target 215° fan 0%. bed 58 target 60° speed 100%. "
+        "progress 45% time 1 hour 7 minutes. benchy")
 
 
 def test_unplanned_items_first():

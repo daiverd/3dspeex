@@ -12,6 +12,9 @@
 #   [screen_reader]
 #   progress_step: 10   # announce print progress every N percent (0 = off)
 #   announce_info: False  # also speak "// " info lines (chatty)
+#   speech_rate: 170    # words per minute
+#   voice: en-us        # an espeak-ng voice (espeak-ng --voices)
+#   volume: 100         # 0 to 200
 #
 # Menu: each knob turn / click / back says where you are. Entering a menu
 # names it, turning within it names just the item, e.g.
@@ -129,12 +132,32 @@ SPEECH_RULES = [
 # SD card listings: Klipper only lists these extensions, and names the
 # menu item with repr(filename), so allow a closing quote
 LOOKS_LIKE_FILE = re.compile(r'\.(gcode|gco|g)[\'"]?$', re.IGNORECASE)
+GCODE_EXTENSION = re.compile(r'(?<=\S)\.(gcode|gco|g)$', re.IGNORECASE)
+
+
+def file_name(name):
+    """A G-code file name without quotes or the extension, which would
+    otherwise be said as "dot gcode" every time."""
+    return GCODE_EXTENSION.sub('', name.strip('\'"'))
+
+
+def duration(hours, minutes):
+    """'1 hour 7 minutes' for the status screen's 01:07"""
+    parts = []
+    if hours:
+        parts.append("%d hour%s" % (hours, "" if hours == 1 else "s"))
+    if minutes or not hours:
+        parts.append("%d minute%s" % (minutes, "" if minutes == 1 else "s"))
+    return " ".join(parts)
+
+
+HOURS_MINUTES = re.compile(r'\b(\d{1,3}):([0-5]\d)\b')
 
 
 def speakable(name):
     """Reword a menu name for speech (see SPEECH_RULES)."""
     if LOOKS_LIKE_FILE.search(name):
-        return name
+        return file_name(name)
     for pattern, repl in SPEECH_RULES:
         name = pattern.sub(repl, name)
     return " ".join(name.split())
@@ -173,10 +196,19 @@ class ScreenReader:
         self.progress_step = config.getint('progress_step', 10,
                                            minval=0, maxval=100)
         self.announce_info = config.getboolean('announce_info', False)
+        self.helper_args = [
+            '--rate', str(config.getint('speech_rate', 170,
+                                        minval=80, maxval=500)),
+            '--volume', str(config.getint('volume', 100,
+                                          minval=0, maxval=200))]
+        voice = config.get('voice', None)
+        if voice:
+            self.helper_args += ['--voice', voice]
         self.helper = None
         self.helper_handle = None
         self.helper_buf = b''
         self.helper_started = None
+        self.dead_helpers = []  # killed, not yet reaped
         self.line_id = 0
         self.speaking = None  # id of the line the helper is saying
         self.speaking_since = 0.
@@ -195,6 +227,7 @@ class ScreenReader:
         self.display = None
         self.frame_items = []   # (row, col, text) drawn in this frame
         self.status_items = []  # (item name, words) in STATUS_ORDER
+        self.status_rows = []   # the same words, a line per screen row
         self.pending_step = None  # +1 / -1 to step on the next frame
         self.status_pos = -1    # -1 is before the first item
         self.last_step = 0.
@@ -372,7 +405,10 @@ class ScreenReader:
         return self.menu is not None and self.menu.is_running()
 
     def _screen_text(self):
-        return ". ".join(r for r in self.screen if r) or "screen blank"
+        rows = self.screen
+        if self.status_rows and not self._menu_running():
+            rows = self.status_rows
+        return ". ".join(r for r in rows if r) or "screen blank"
 
     # Status screen items. Each [display_data] item is drawn with one
     # display.draw_text() call, so capturing those gives each item's text
@@ -407,11 +443,15 @@ class ScreenReader:
     def _status_items(self):
         names = self._item_names()
         items = []
+        rows = {}
         for row, col, text in self.frame_items:
             name = names.get((row, col))
             words = self._item_words(name, str(text))
             if words:
                 items.append((name, words))
+                rows.setdefault(row, []).append(words)
+        # the whole screen, in the same words, a sentence per row
+        self.status_rows = [" ".join(rows[r]) for r in sorted(rows)]
 
         def rank(item):
             if item[0] in STATUS_ORDER:
@@ -425,6 +465,11 @@ class ScreenReader:
         for i in range(1, len(parts), 2):
             parts[i] = GLYPH_WORDS.get(parts[i], ' %s ' % (parts[i],))
         words = " ".join("".join(parts).split())
+        if name == 'printing_time':
+            words = HOURS_MINUTES.sub(
+                lambda m: duration(int(m.group(1)), int(m.group(2))), words)
+        elif name == 'print_status':
+            words = file_name(words)
         if words and len(parts) == 1 and name in STATUS_LABELS:
             words = "%s %s" % (STATUS_LABELS[name], words)
         return words
@@ -503,7 +548,8 @@ class ScreenReader:
                     self._say("print resumed")
                 else:
                     self.last_bucket = 0
-                    name = (status.get('filename') or '').split('/')[-1]
+                    name = file_name(
+                        (status.get('filename') or '').split('/')[-1])
                     self._say(("printing " + name).strip())
             elif state == 'error':
                 self._say("print error: %s" % (status.get('message'),))
@@ -608,6 +654,7 @@ class ScreenReader:
     # The helper process
 
     def _start_helper(self, eventtime):
+        self._reap()
         if self.helper is not None:
             if self.helper.poll() is None:
                 return True
@@ -618,7 +665,8 @@ class ScreenReader:
         self.helper_started = eventtime
         try:
             self.helper = subprocess.Popen(
-                [sys.executable, HELPER], stdin=subprocess.PIPE,
+                [sys.executable, HELPER] + self.helper_args,
+                stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, start_new_session=True)
         except Exception:
             logging.exception("screen_reader: can't start %s", HELPER)
@@ -674,19 +722,22 @@ class ScreenReader:
             self.reactor.update_timer(self.speech_timer, self.reactor.NOW)
         if helper is None:
             return
-        # Closing its input stops the speech and ends it; wait, so a new
-        # helper can never talk over this one.
+        # Kill it and its espeak-ng at once (it has its own process group)
+        # rather than wait for it: a stuck helper mustn't stall Klipper.
+        # Killed processes can't make sound, so a new helper can't talk
+        # over this one.
         try:
-            helper.stdin.close()
+            os.killpg(helper.pid, signal.SIGKILL)
         except OSError:
             pass
-        try:
-            helper.wait(1.5)
-        except subprocess.TimeoutExpired:
-            # its own process group, so this gets espeak-ng too
-            os.killpg(helper.pid, signal.SIGKILL)
-            helper.wait()
+        helper.stdin.close()
         helper.stdout.close()
+        self.dead_helpers.append(helper)
+        self._reap()
+
+    def _reap(self):
+        # usually gone at once; any still exiting are checked next time
+        self.dead_helpers = [h for h in self.dead_helpers if h.poll() is None]
 
 
 def load_config(config):
