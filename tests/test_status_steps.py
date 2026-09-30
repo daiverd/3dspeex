@@ -112,13 +112,38 @@ def test_resets_after_a_minute():
     assert turn(reader, 'down') == SV08_ORDER[0]
 
 
-def test_menu_close_starts_over():
+def draw(reader):
+    """Draw the next frame with no knob turn; return what was said."""
+    reader._lcd_clear(None)
+    for row, col, name, text in reader.screen_data:
+        reader.display.draw_text(row, col, text, 0.)
+    reader._lcd_flush(None)
+    spoken = reader.queue[-1][1] if reader.queue else None
+    reader.queue = []
+    return spoken
+
+
+def test_menu_close_says_first_item():
     reader = make_reader(SV08_SCREEN)
+    turn(reader, 'down')
     turn(reader, 'down')
     turn(reader, 'down')
     reader.outer = 'back'
     reader._announce(reader.menu)  # menu closed
-    assert turn(reader, 'down') == SV08_ORDER[0]
+    assert draw(reader) == "menu closed. " + SV08_ORDER[0]
+    assert draw(reader) is None  # said once
+    assert turn(reader, 'down') == SV08_ORDER[1]
+
+
+def test_menu_close_unknown_layout():
+    reader = make_reader(SV08_SCREEN)
+    reader.display.show_data_group = None
+    reader.screen_data = []
+    reader.outer = 'back'
+    reader._announce(reader.menu)
+    reader.grid = [list("Ready")]
+    reader._lcd_flush(None)
+    assert reader.queue[-1][1] == "menu closed. Ready", reader.queue
 
 
 def test_reverse_navigation():

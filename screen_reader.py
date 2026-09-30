@@ -16,13 +16,13 @@
 # Menu: each knob turn / click / back says where you are. Entering a menu
 # names it, turning within it names just the item, e.g.
 #   "Prepare: Back"   "Move Z"   "Speed: 100%, editing"   "Speed: 105%, done"
-# Status screen (menu closed): the whole screen is read out when the
-# menu closes, e.g.
+# Status screen (menu closed): turning the knob steps through it one
+# item at a time, most interesting first (see STATUS_ORDER): the way that
+# moves down a menu goes to the next item, the other way back. Closing
+# the menu says the first item, e.g. "menu closed. Ready". After a minute
+# without turning, it starts again from the top. ANNOUNCE_SCREEN reads
+# the whole screen, e.g.
 #   "nozzle 25° fan 0%. bed 24° speed 100%. 0% 00:00. Ready"
-# Turning the knob steps through it one item at a time, most interesting
-# first (see STATUS_ORDER): the way that moves down a menu goes to the
-# next item, the other way back. After a minute without turning, it
-# starts again from the top.
 # Events: M117 messages, print state and progress, heaters reaching
 # target, "!!" errors, RESPOND/M118 echoes, and shutdowns.
 # G-code: ANNOUNCE MSG="text"   say a line (for your own macros)
@@ -190,7 +190,7 @@ class ScreenReader:
         self.lcd_size = (16, 4)  # replaced by the real size once hooked
         self.grid = self._blank_grid()
         self.screen = []
-        self.pending_read = None  # prefix to say before the next screen
+        self.pending_read = None  # prefix to say before the first item
         self.display = None
         self.frame_items = []   # (row, col, text) drawn in this frame
         self.status_items = []  # (item name, words) in STATUS_ORDER
@@ -357,11 +357,12 @@ class ScreenReader:
 
     def _lcd_flush(self, ret):
         self.screen = [" ".join("".join(row).split()) for row in self.grid]
-        if self.pending_read is not None and not self._menu_running():
-            prefix, self.pending_read = self.pending_read, None
-            self._say(prefix + self._screen_text(), interrupt=True)
         if not self._menu_running():
             self.status_items = self._status_items()
+            if self.pending_read is not None:
+                # the menu just closed: say the first item
+                prefix, self.pending_read = self.pending_read, None
+                self._step_status(1, prefix)
             if self.pending_step is not None:
                 step, self.pending_step = self.pending_step, None
                 self._step_status(step)
@@ -427,18 +428,18 @@ class ScreenReader:
             words = "%s %s" % (STATUS_LABELS[name], words)
         return words
 
-    def _step_status(self, step):
+    def _step_status(self, step, prefix=""):
         items = self.status_items
         if not items:
             # nothing recognised; read the screen as it is
-            self._say(self._screen_text(), interrupt=True)
+            self._say(prefix + self._screen_text(), interrupt=True)
             return
         now = self.reactor.monotonic()
         if now > self.last_step + STATUS_RESET:
             self.status_pos = -1
         self.last_step = now
         self.status_pos = max(0, min(len(items) - 1, self.status_pos + step))
-        self._say(items[self.status_pos][1], interrupt=True)
+        self._say(prefix + items[self.status_pos][1], interrupt=True)
 
     # Printer events
 

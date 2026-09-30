@@ -24,8 +24,8 @@ Touchscreen-only printers are not supported yet.
   from the top. Items the reader doesn't know about, like ones a printer
   maker added, come first. The order is `STATUS_ORDER` in
   `screen_reader.py`.
-- The whole status screen is read when the menu closes, and by
-  `ANNOUNCE_SCREEN`.
+- Closing the menu says the first status item; turning then continues
+  from there. `ANNOUNCE_SCREEN` reads the whole status screen.
 - Knob speech (menu and status items) interrupts whatever is being said.
   Other announcements are queued.
 
