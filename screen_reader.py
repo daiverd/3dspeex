@@ -18,7 +18,8 @@
 #   "Prepare: Back"   "Move Z"   "Speed: 100%, editing"   "Speed: 105%, done"
 # Status screen (menu closed): turning the knob steps through it one
 # item at a time, most interesting first (see STATUS_ORDER): the way that
-# moves down a menu goes to the next item, the other way back. Closing
+# moves down a menu goes to the next item, the other way back; back past
+# the first item reads the whole screen. Closing
 # the menu says the first item, e.g. "menu closed. Ready". After a minute
 # without turning, it starts again from the top. ANNOUNCE_SCREEN reads
 # the whole screen, e.g.
@@ -438,7 +439,12 @@ class ScreenReader:
         if now > self.last_step + STATUS_RESET:
             self.status_pos = -1
         self.last_step = now
-        self.status_pos = max(0, min(len(items) - 1, self.status_pos + step))
+        if self.status_pos + step < 0:
+            # back past the first item: the whole screen, then start over
+            self.status_pos = -1
+            self._say(prefix + self._screen_text(), interrupt=True)
+            return
+        self.status_pos = min(len(items) - 1, self.status_pos + step)
         self._say(prefix + items[self.status_pos][1], interrupt=True)
 
     # Printer events

@@ -71,12 +71,16 @@ class Clock:
 
 def make_reader(screen):
     reader = screen_reader.ScreenReader(Config())
+    reader._screen_text = lambda: WHOLE_SCREEN
     display = Display(screen)
     reader._hook_draw(display)
     reader.menu = Menu()
     reader.clock = reader.reactor.monotonic = Clock()
     reader.screen_data = screen
     return reader
+
+
+WHOLE_SCREEN = "the whole screen"
 
 
 def turn(reader, direction):
@@ -98,9 +102,19 @@ def test_order_and_ends():
     assert heard == SV08_ORDER, heard
     assert turn(reader, 'down') == SV08_ORDER[-1]  # stays at the end
     assert turn(reader, 'up') == SV08_ORDER[-2]
-    for _ in SV08_ORDER:
+    for _ in SV08_ORDER[2:]:
         turn(reader, 'up')
-    assert turn(reader, 'up') == SV08_ORDER[0]  # stays at the start
+    assert reader.status_pos == 0
+    # back past the first item reads the whole screen, then starts over
+    assert turn(reader, 'up') == WHOLE_SCREEN
+    assert turn(reader, 'up') == WHOLE_SCREEN
+    assert turn(reader, 'down') == SV08_ORDER[0]
+
+
+def test_back_first_reads_screen():
+    reader = make_reader(SV08_SCREEN)
+    assert turn(reader, 'up') == WHOLE_SCREEN
+    assert turn(reader, 'down') == SV08_ORDER[0]
 
 
 def test_resets_after_a_minute():
@@ -137,6 +151,7 @@ def test_menu_close_says_first_item():
 
 def test_menu_close_unknown_layout():
     reader = make_reader(SV08_SCREEN)
+    del reader._screen_text  # read the real screen
     reader.display.show_data_group = None
     reader.screen_data = []
     reader.outer = 'back'
@@ -165,6 +180,7 @@ def test_unplanned_items_first():
 
 def test_unknown_layout_reads_screen():
     reader = make_reader(SV08_SCREEN)
+    del reader._screen_text  # read the real screen
     reader.display.show_data_group = None
     reader.frame_items = []
     reader.screen = ["nozzle 25°", "Ready"]

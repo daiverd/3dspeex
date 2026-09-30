@@ -20,7 +20,8 @@ Touchscreen-only printers are not supported yet.
   one item at a time, most interesting first: the print status or
   message, progress, print time, then temperatures, fan and speed.
   Turning the way that moves down a menu goes to the next item; the
-  other way goes back. After a minute without turning, it starts again
+  other way goes back. Going back from the first item reads the whole
+  screen. After a minute without turning, it starts again
   from the top. Items the reader doesn't know about, like ones a printer
   maker added, come first. The order is `STATUS_ORDER` in
   `screen_reader.py`.
