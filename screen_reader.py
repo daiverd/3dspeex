@@ -191,6 +191,9 @@ MIN_RATE, MAX_RATE = 80, 500  # words per minute
 MIN_VOLUME = 10
 SETTINGS_FILE = 'screen_reader_settings.json'  # next to printer.cfg
 SAVE_DELAY = 2.0  # save settings this long after the last change
+# The menu's progress choices, in percent (0 = off); any 0 to 100 can be
+# set with SCREEN_READER_SET or in the config
+PROGRESS_STEPS = [0, 1, 5, 10, 25]
 HELPER_RETRY = 10.0     # wait this long before restarting a failed helper
 SPEECH_TIMEOUT = 120.0  # give up on a line the helper never finishes
 MAX_LINE_BYTES = 4000   # under PIPE_BUF, so each write is all or nothing
@@ -664,6 +667,10 @@ class ScreenReader:
             'voice_index': (self.voices.index(self.voice)
                             if self.voice in self.voices else 0),
             'volume': volume, 'progress_step': self.progress_step,
+            'progress_steps': PROGRESS_STEPS,
+            'progress_index': min(
+                range(len(PROGRESS_STEPS)),
+                key=lambda i: abs(PROGRESS_STEPS[i] - self.progress_step)),
             'announce_info': self.announce_info,
         }
 

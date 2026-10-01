@@ -147,8 +147,8 @@ parameters, reports the current settings.
 ## Settings menu
 
 `screen_reader_menu.cfg` adds a **Screen reader** menu with Rate,
-Volume, Voice, Progress (how often print progress is said; off, or
-every 5% to 50%), Info lines, and Reset to config. Turning the knob
+Volume, Voice, Progress (how often print progress is said: off, or
+every 1%, 5%, 10% or 25%), Info lines, and Reset to config. Turning the knob
 while editing applies each change as you go, so you hear the new rate or
 voice saying its own value.
 

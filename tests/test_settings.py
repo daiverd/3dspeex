@@ -136,6 +136,14 @@ def test_voice_list():
     assert status['volume'] == -1  # the card isn't known yet
 
 
+def test_progress_choices():
+    for step, index in ((0, 0), (1, 1), (10, 3), (20, 4), (100, 4)):
+        status = screen_reader.ScreenReader(
+            Config(progress_step=step)).get_status(0)
+        assert status['progress_steps'][status['progress_index']] == \
+            screen_reader.PROGRESS_STEPS[index], (step, status)
+
+
 if __name__ == '__main__':
     failures = 0
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
