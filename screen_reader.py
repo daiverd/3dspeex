@@ -14,7 +14,11 @@
 #   announce_info: False  # also speak "// " info lines (chatty)
 #   speech_rate: 170    # words per minute
 #   voice: en-us        # an espeak-ng voice (espeak-ng --voices)
-#   volume: 100         # 0 to 200
+#   voices: en-us, en-gb  # voices to choose from in the menu
+#   volume: 70          # the sound card's volume, 10 to 100 percent
+#                       # (unset: left as it is)
+#   mixer_device: default  # ALSA device for the volume
+#   mixer_control: Headset # its volume control; found if unset
 #
 # Menu: each knob turn / click / back says where you are. Entering a menu
 # names it, turning within it names just the item, e.g.
@@ -31,11 +35,20 @@
 # target, "!!" errors, RESPOND/M118 echoes, and shutdowns.
 # G-code: ANNOUNCE MSG="text"   say a line (for your own macros)
 #         ANNOUNCE_SCREEN       read out the screen now
+#         SCREEN_READER_SET [RATE=] [VOICE=] [VOLUME=] [PROGRESS_STEP=]
+#             [ANNOUNCE_INFO=0|1] [RESET=1]
+#                               change settings now; they're saved in
+#                               screen_reader_settings.json next to
+#                               printer.cfg and outlast restarts. RESET
+#                               goes back to the config. With no
+#                               parameters, reports them.
+# Settings menu: screen_reader_menu.cfg.
 #
 # Navigation and screen reads interrupt whatever is being said, like a
 # screen reader. Events wait their turn; a newer event of the same kind
 # (another M117, the next progress step) replaces one still waiting.
 import fcntl
+import json
 import logging
 import os
 import re
@@ -154,6 +167,12 @@ def duration(hours, minutes):
 HOURS_MINUTES = re.compile(r'\b(\d{1,3}):([0-5]\d)\b')
 
 
+def clamp_volume(volume):
+    if volume is None:
+        return None
+    return max(MIN_VOLUME, min(100, volume))
+
+
 def speakable(name):
     """Reword a menu name for speech (see SPEECH_RULES)."""
     if LOOKS_LIKE_FILE.search(name):
@@ -166,6 +185,12 @@ PRINT_STATES = {
     'cancelled': "print cancelled",
 }
 POLL_TIME = 1.0
+MIN_RATE, MAX_RATE = 80, 500  # words per minute
+# Volume is the sound card's, in percent. Never below this, so you can
+# always hear the menu to turn it back up.
+MIN_VOLUME = 10
+SETTINGS_FILE = 'screen_reader_settings.json'  # next to printer.cfg
+SAVE_DELAY = 2.0  # save settings this long after the last change
 HELPER_RETRY = 10.0     # wait this long before restarting a failed helper
 SPEECH_TIMEOUT = 120.0  # give up on a line the helper never finishes
 MAX_LINE_BYTES = 4000   # under PIPE_BUF, so each write is all or nothing
@@ -193,17 +218,37 @@ class ScreenReader:
     def __init__(self, config):
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
-        self.progress_step = config.getint('progress_step', 10,
-                                           minval=0, maxval=100)
-        self.announce_info = config.getboolean('announce_info', False)
-        self.helper_args = [
-            '--rate', str(config.getint('speech_rate', 170,
-                                        minval=80, maxval=500)),
-            '--volume', str(config.getint('volume', 100,
-                                          minval=0, maxval=200))]
-        voice = config.get('voice', None)
-        if voice:
-            self.helper_args += ['--voice', voice]
+        # Settings that SCREEN_READER_SET (and the menu) can change; what's
+        # changed is saved in settings_file and replaces these on restart
+        self.configured = {
+            'progress_step': config.getint('progress_step', 10,
+                                           minval=0, maxval=100),
+            'announce_info': config.getboolean('announce_info', False),
+            'rate': config.getint('speech_rate', 170,
+                                  minval=MIN_RATE, maxval=MAX_RATE),
+            'voice': config.get('voice', None) or '',
+            # None leaves the card's volume as it is
+            'volume': clamp_volume(config.getint('volume', None)),
+        }
+        self.voices = [v.strip() for v in config.get('voices', '').split(',')
+                       if v.strip()]
+        self.mixer_args = ['--mixer-device',
+                           config.get('mixer_device', 'default')]
+        mixer_control = config.get('mixer_control', None)
+        if mixer_control:
+            self.mixer_args += ['--mixer-control', mixer_control]
+        config_file = self.printer.get_start_args().get('config_file')
+        self.settings_file = None
+        if config_file:
+            self.settings_file = os.path.join(os.path.dirname(config_file),
+                                              SETTINGS_FILE)
+        self.saved = self._load_settings()
+        for name, value in dict(self.configured, **self.saved).items():
+            setattr(self, name, value)
+        self.volume_now = None  # the card's volume, as the helper reports
+        self.last_bucket = 0  # progress said, in progress_step units
+        self.report_errors = False  # say helper errors (after a change)
+        self.save_timer = self.reactor.register_timer(self._save_settings)
         self.helper = None
         self.helper_handle = None
         self.helper_buf = b''
@@ -242,6 +287,10 @@ class ScreenReader:
                                desc="Say a line out loud")
         gcode.register_command('ANNOUNCE_SCREEN', self.cmd_ANNOUNCE_SCREEN,
                                desc="Read out the LCD's current text")
+        gcode.register_command('SCREEN_READER_SET',
+                               self.cmd_SCREEN_READER_SET,
+                               desc="Change the screen reader's voice"
+                               " settings")
 
     def _ready(self):
         hooked = []
@@ -603,6 +652,128 @@ class ScreenReader:
     def cmd_ANNOUNCE_SCREEN(self, gcmd):
         self._say(self._screen_text(), interrupt=True)
 
+    # Settings
+
+    def get_status(self, eventtime):
+        # for the menu (screen_reader_menu.cfg) and macros
+        volume = self.volume if self.volume is not None else self.volume_now
+        if self.volume_now is None:
+            volume = -1  # no volume control (or not found yet)
+        return {
+            'rate': self.rate, 'voice': self.voice, 'voices': self.voices,
+            'voice_index': (self.voices.index(self.voice)
+                            if self.voice in self.voices else 0),
+            'volume': volume, 'progress_step': self.progress_step,
+            'announce_info': self.announce_info,
+        }
+
+    def cmd_SCREEN_READER_SET(self, gcmd):
+        if gcmd.get_int('RESET', 0):
+            self._change(dict(self.configured))
+            self.saved = {}
+            self._save_settings()
+            self._say("settings reset")
+        changes = {}
+        rate = gcmd.get_int('RATE', None, minval=MIN_RATE, maxval=MAX_RATE)
+        if rate is not None:
+            changes['rate'] = rate
+        voice = gcmd.get('VOICE', None)
+        if voice is not None:
+            changes['voice'] = voice.strip()
+        volume = gcmd.get_int('VOLUME', None, minval=0, maxval=100)
+        if volume is not None:
+            changes['volume'] = clamp_volume(volume)
+        progress_step = gcmd.get_int('PROGRESS_STEP', None,
+                                     minval=0, maxval=100)
+        if progress_step is not None:
+            changes['progress_step'] = progress_step
+        announce_info = gcmd.get_int('ANNOUNCE_INFO', None,
+                                     minval=0, maxval=1)
+        if announce_info is not None:
+            changes['announce_info'] = bool(announce_info)
+        if changes:
+            self._change(changes)
+            self.saved.update(changes)
+            self.reactor.update_timer(self.save_timer,
+                                      self.reactor.monotonic() + SAVE_DELAY)
+        elif not gcmd.get_int('RESET', 0):
+            status = self.get_status(None)
+            gcmd.respond_info(
+                "rate %d, voice %s, volume %s, progress step %d%%,"
+                " info lines %s" % (
+                    self.rate, self.voice or "default",
+                    "%d%%" % (status['volume'],) if status['volume'] >= 0
+                    else "not available", self.progress_step,
+                    "on" if self.announce_info else "off"))
+
+    def _change(self, settings):
+        self.report_errors = True
+        if 'progress_step' in settings:
+            step = settings['progress_step']
+            if step and self.progress_step:
+                # keep counting from the last percent said
+                self.last_bucket = (self.last_bucket * self.progress_step
+                                    // step)
+        for name, value in settings.items():
+            setattr(self, name, value)
+        if 'rate' in settings:
+            self._send("rate %d" % (self.rate,))
+        if 'voice' in settings:
+            self._send("voice " + self.voice)
+        if 'volume' in settings and self.volume is not None:
+            self._send("volume %d" % (self.volume,))
+
+    def _load_settings(self):
+        if self.settings_file is None:
+            return {}
+        try:
+            with open(self.settings_file) as f:
+                saved = json.load(f)
+        except FileNotFoundError:
+            return {}
+        except Exception:
+            logging.exception("screen_reader: can't read %s",
+                              self.settings_file)
+            return {}
+        settings = {}
+        for name, value in saved.items():
+            if name not in self.configured:
+                continue
+            if name == 'voice':
+                settings[name] = str(value)
+            elif name == 'announce_info':
+                settings[name] = bool(value)
+            elif isinstance(value, int):
+                if name == 'volume':
+                    value = clamp_volume(value)
+                elif name == 'rate':
+                    value = max(MIN_RATE, min(MAX_RATE, value))
+                else:
+                    value = max(0, min(100, value))
+                settings[name] = value
+        return settings
+
+    def _save_settings(self, eventtime=None):
+        if self.settings_file is None:
+            return self.reactor.NEVER
+        try:
+            if not self.saved:
+                if os.path.exists(self.settings_file):
+                    os.remove(self.settings_file)
+                return self.reactor.NEVER
+            # the helper may have refused a voice
+            if 'voice' in self.saved:
+                self.saved['voice'] = self.voice
+            tmp = self.settings_file + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump(self.saved, f, indent=1, sort_keys=True)
+                f.write('\n')
+            os.replace(tmp, self.settings_file)
+        except Exception:
+            logging.exception("screen_reader: can't save %s",
+                              self.settings_file)
+        return self.reactor.NEVER
+
     # Speech queue. Lines wait here; the helper gets one at a time and
     # says "done <id>" when it finishes, which sends the next.
 
@@ -665,7 +836,7 @@ class ScreenReader:
         self.helper_started = eventtime
         try:
             self.helper = subprocess.Popen(
-                [sys.executable, HELPER] + self.helper_args,
+                [sys.executable, HELPER] + self.helper_args(),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, start_new_session=True)
         except Exception:
@@ -678,7 +849,16 @@ class ScreenReader:
         self.helper_buf = b''
         self.helper_handle = self.reactor.register_fd(
             self.helper.stdout.fileno(), self._helper_read)
+        self.report_errors = False
+        if self.voice:
+            self._send("voice " + self.voice)  # checks that it exists
+        # set the card's volume (again, if it was replugged), or find it
+        self._send("volume" if self.volume is None
+                   else "volume %d" % (self.volume,))
         return True
+
+    def helper_args(self):
+        return ['--rate', str(self.rate)] + self.mixer_args
 
     def _send(self, line):
         if self.helper is None:
@@ -711,6 +891,18 @@ class ScreenReader:
                 self.speaking = None
                 self.reactor.update_timer(self.speech_timer,
                                           self.reactor.NOW)
+                continue
+            word, _, rest = line.decode('utf-8', 'replace').partition(' ')
+            if word == 'volume':
+                self.volume_now = int(rest) if rest.isdigit() else None
+            elif word == 'voice':
+                self.voice = rest  # unchanged if the new one wasn't found
+            elif word == 'info':
+                logging.info("screen_reader: speech helper: %s", rest)
+            elif word == 'error':
+                logging.warning("screen_reader: speech helper: %s", rest)
+                if self.report_errors:
+                    self._say(rest)
 
     def _close_helper(self):
         helper, self.helper = self.helper, None

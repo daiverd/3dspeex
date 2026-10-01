@@ -19,7 +19,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 import screen_reader  # noqa: E402
-from test_speech_helper import FAKE, log  # noqa: E402
+from test_speech_helper import FAKE, fake_tools, log  # noqa: E402
 
 HELPER = os.path.abspath(screen_reader.HELPER)
 
@@ -65,6 +65,7 @@ class Printer:
     def __init__(self):
         self.reactor = Reactor()
         self.handlers = {}
+        self.start_args = {}
 
     def get_reactor(self):
         return self.reactor
@@ -74,6 +75,9 @@ class Printer:
 
     def lookup_object(self, name, default=None):
         return self
+
+    def get_start_args(self):
+        return self.start_args
 
     # the gcode object
     def register_output_handler(self, callback):
@@ -97,17 +101,19 @@ class Config:
     getint = getboolean = get
 
 
-def make_reader(tmp, secs):
-    """A ScreenReader whose helper runs the fake speech command."""
+def make_reader(tmp, secs, config=None):
+    """A ScreenReader whose helper runs the fake speech command, and the
+    fake amixer"""
+    path = fake_tools(tmp)['PATH']
     wrapper = os.path.join(tmp, 'helper.py')
     with open(wrapper, 'w') as f:
         f.write("import os, runpy, sys\n"
-                "os.environ.update(D=%r, SECS=%r)\n"
-                "sys.argv = [%r, 'sh', '-c', %r]\n"
+                "os.environ.update(D=%r, SECS=%r, PATH=%r)\n"
+                "sys.argv = [%r] + sys.argv[1:] + ['sh', '-c', %r]\n"
                 "runpy.run_path(sys.argv[0], run_name='__main__')\n"
-                % (tmp, str(secs), HELPER, FAKE))
+                % (tmp, str(secs), path, HELPER, FAKE))
     screen_reader.HELPER = wrapper
-    reader = screen_reader.ScreenReader(Config())
+    reader = screen_reader.ScreenReader(config or Config())
     return reader, reader.printer.reactor
 
 
@@ -152,11 +158,20 @@ def test_restarts_dead_helper():
 
 def test_voice_settings():
     reader = screen_reader.ScreenReader(
-        Config(speech_rate=200, volume=150, voice='en-us'))
-    assert reader.helper_args == ['--rate', '200', '--volume', '150',
-                                  '--voice', 'en-us'], reader.helper_args
+        Config(speech_rate=200, voice='en-us', mixer_control='Headset'))
+    assert reader.helper_args() == [
+        '--rate', '200', '--mixer-device', 'default',
+        '--mixer-control', 'Headset'], reader.helper_args()
+    assert reader.voice == 'en-us' and reader.volume is None
     reader = screen_reader.ScreenReader(Config())
-    assert reader.helper_args == ['--rate', '170', '--volume', '100']
+    assert reader.helper_args() == ['--rate', '170',
+                                    '--mixer-device', 'default']
+
+
+def test_volume_floor():
+    # an old espeak-style volume (0 to 200) still loads
+    assert screen_reader.ScreenReader(Config(volume=150)).volume == 100
+    assert screen_reader.ScreenReader(Config(volume=0)).volume == 10
 
 
 def test_stuck_helper_closes_at_once():

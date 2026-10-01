@@ -21,6 +21,8 @@ EXTRA="$KLIPPER_DIR/klippy/extras/screen_reader.py"
 PRINTER_CFG="$CONFIG_DIR/printer.cfg"
 OUR_CFG="$CONFIG_DIR/screen_reader.cfg"
 INCLUDE_LINE="[include screen_reader.cfg]"
+MENU_CFG="$CONFIG_DIR/screen_reader_menu.cfg"
+MENU_INCLUDE="[include screen_reader_menu.cfg]"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
 usb_audio=0 restart=1 uninstall=0
@@ -78,14 +80,24 @@ if [ "$uninstall" = 1 ]; then
         say "Removing $EXTRA"
         rm "$EXTRA"
     fi
-    if grep -qxF "$INCLUDE_LINE" "$PRINTER_CFG"; then
-        say "Removing $INCLUDE_LINE from printer.cfg (backup: printer.cfg.$STAMP)"
+    if [ -L "$MENU_CFG" ]; then
+        say "Removing $MENU_CFG"
+        rm "$MENU_CFG"
+    fi
+    if grep -qxF -e "$INCLUDE_LINE" -e "$MENU_INCLUDE" "$PRINTER_CFG"; then
+        say "Removing 3dspeex includes from printer.cfg (backup: printer.cfg.$STAMP)"
         cp "$PRINTER_CFG" "$PRINTER_CFG.$STAMP"
-        grep -vxF "$INCLUDE_LINE" "$PRINTER_CFG.$STAMP" > "$PRINTER_CFG"
+        grep -vxF -e "$INCLUDE_LINE" -e "$MENU_INCLUDE" \
+            "$PRINTER_CFG.$STAMP" > "$PRINTER_CFG"
     fi
     if [ -f "$OUR_CFG" ]; then
         say "Keeping your settings in $OUR_CFG.$STAMP"
         mv "$OUR_CFG" "$OUR_CFG.$STAMP"
+    fi
+    saved="$CONFIG_DIR/screen_reader_settings.json"
+    if [ -f "$saved" ]; then
+        say "Keeping settings changed from the menu in $saved.$STAMP"
+        mv "$saved" "$saved.$STAMP"
     fi
     if [ -n "$(configured_in)" ]; then
         warn "printer.cfg still has a [screen_reader] section; remove it" \
@@ -133,14 +145,41 @@ else
 # announce_info: False  # also say "//" info lines (chatty)
 # speech_rate: 170      # words per minute
 # voice: en-us          # an espeak-ng voice (espeak-ng --voices)
-# volume: 100           # 0 to 200
+# voices: en-us, en-gb, en-us+f3  # voices to choose from in the menu
+# volume: 70            # sound card volume, 10 to 100 percent
+# mixer_device: default # ALSA device whose volume to set
+# mixer_control:        # its volume control (amixer scontrols); found
+#                       # by itself on most cards
+# The "Screen reader" menu on the display; put # in front to hide it.
+[include screen_reader_menu.cfg]
 EOF
     say "Adding $INCLUDE_LINE to printer.cfg (backup: printer.cfg.$STAMP)"
     cp "$PRINTER_CFG" "$PRINTER_CFG.$STAMP"
     { echo "$INCLUDE_LINE"; cat "$PRINTER_CFG.$STAMP"; } > "$PRINTER_CFG"
 fi
 
-# 4. Let the Klipper service's user reach the sound card
+# 4. The "Screen reader" settings menu, linked like the module so it
+#    updates with git pull. Older installs get the include added.
+if [ -e "$MENU_CFG" ] && [ ! -L "$MENU_CFG" ]; then
+    say "Moving existing $MENU_CFG to $MENU_CFG.$STAMP"
+    mv "$MENU_CFG" "$MENU_CFG.$STAMP"
+fi
+ln -sfn "$REPO_DIR/screen_reader_menu.cfg" "$MENU_CFG"
+# (a commented-out include counts: that hides the menu on purpose)
+if ! grep -qF "$MENU_INCLUDE" "$PRINTER_CFG" "$OUR_CFG" 2>/dev/null; then
+    if [ -f "$OUR_CFG" ]; then
+        say "Adding the Screen reader menu to $(basename "$OUR_CFG")"
+        { echo
+          echo '# The "Screen reader" menu on the display; put # in front to hide it.'
+          echo "$MENU_INCLUDE"; } >> "$OUR_CFG"
+    else
+        say "Adding $MENU_INCLUDE to printer.cfg (backup: printer.cfg.$STAMP)"
+        cp "$PRINTER_CFG" "$PRINTER_CFG.$STAMP"
+        { echo "$MENU_INCLUDE"; cat "$PRINTER_CFG.$STAMP"; } > "$PRINTER_CFG"
+    fi
+fi
+
+# 5. Let the Klipper service's user reach the sound card
 if have_klipper_service; then
     kuser="$(systemctl show -p User --value "$KLIPPER_SERVICE.service")"
     kuser="${kuser:-root}"
@@ -150,7 +189,7 @@ if have_klipper_service; then
     fi
 fi
 
-# 5. Optional: always use a USB sound card
+# 6. Optional: always use a USB sound card
 if [ "$usb_audio" = 1 ]; then
     if command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
         warn "PulseAudio/PipeWire is running; it manages the default" \
@@ -177,7 +216,7 @@ if [ "$usb_audio" = 1 ]; then
     fi
 fi
 
-# 6. Test the voice
+# 7. Test the voice
 say "Testing speech"
 echo "3D speex installed" | espeak-ng --stdin ||
     warn "espeak-ng couldn't play; see Troubleshooting in README.md"
