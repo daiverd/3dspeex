@@ -11,12 +11,15 @@
 # Add --no-restart to skip restarting Klipper.
 # Paths can be overridden: KLIPPER_DIR=... CONFIG_DIR=... ./install.sh
 # and the service name (KIAUH multi-instance): KLIPPER_SERVICE=klipper-1
+# Klipper is only restarted once Moonraker says no print is running:
+# MOONRAKER_URL=http://localhost:7125 (the default) says where to ask.
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 KLIPPER_DIR="${KLIPPER_DIR:-$HOME/klipper}"
 CONFIG_DIR="${CONFIG_DIR:-$HOME/printer_data/config}"
 KLIPPER_SERVICE="${KLIPPER_SERVICE:-klipper}"
+MOONRAKER_URL="${MOONRAKER_URL:-http://localhost:7125}"
 EXTRA="$KLIPPER_DIR/klippy/extras/screen_reader.py"
 PRINTER_CFG="$CONFIG_DIR/printer.cfg"
 OUR_CFG="$CONFIG_DIR/screen_reader.cfg"
@@ -48,24 +51,34 @@ configured_in() {
     grep -ls '^\[screen_reader\]' "$PRINTER_CFG" "$OUR_CFG" || true
 }
 
-# Refuse to restart Klipper in the middle of a print.
-printer_busy() {
-    local state
-    state="$(curl -s --max-time 3 \
-        'http://localhost:7125/printer/objects/query?print_stats=state' |
+# The print state from Moonraker (standby, printing, paused...), or
+# nothing if it can't be asked
+print_state() {
+    curl -s --max-time 3 \
+        "$MOONRAKER_URL/printer/objects/query?print_stats=state" |
         python3 -c 'import json,sys
 print(json.load(sys.stdin)["result"]["status"]["print_stats"]["state"])' \
-        2>/dev/null)" || return 1
-    [ "$state" = printing ] || [ "$state" = paused ]
+        2>/dev/null || true
 }
 
+# Never restart Klipper in the middle of a print: only when Moonraker
+# says no print is running, not when it can't be asked.
 restart_klipper() {
+    local how="sudo systemctl restart $KLIPPER_SERVICE" state
     if [ "$restart" = 0 ] || ! have_klipper_service; then
-        say "Restart Klipper yourself to apply: sudo systemctl restart $KLIPPER_SERVICE"
-    elif printer_busy; then
-        warn "A print is running; not restarting Klipper. Restart it later."
+        say "Restart Klipper yourself to apply: $how"
+        return
+    fi
+    state="$(print_state)"
+    if [ -z "$state" ]; then
+        warn "Couldn't ask Moonraker ($MOONRAKER_URL) whether a print is" \
+             "running, so not restarting Klipper. When the printer is" \
+             "idle, restart it yourself: $how"
+    elif [ "$state" = printing ] || [ "$state" = paused ]; then
+        warn "A print is ${state/printing/running}; not restarting Klipper. When it's" \
+             "done, restart it yourself: $how"
     else
-        say "Restarting Klipper"
+        say "Restarting Klipper (print state: $state)"
         sudo systemctl restart "$KLIPPER_SERVICE"
     fi
 }

@@ -65,9 +65,13 @@ The script installs espeak-ng and alsa-utils (via apt) if needed,
 symlinks `screen_reader.py` into `~/klipper/klippy/extras/`, creates
 `~/printer_data/config/screen_reader.cfg` and includes it from `printer.cfg`
 (a backup of `printer.cfg` is made), symlinks `screen_reader_menu.cfg`
-into the config folder and includes it from `screen_reader.cfg`, adds the Klipper user to the `audio`
-group, and restarts Klipper. It will not restart Klipper while a print is
-running.
+into the config folder and includes it from `screen_reader.cfg`, adds
+the Klipper user to the `audio` group, and restarts Klipper. It only
+restarts Klipper when Moonraker says no print is running or paused; if
+Moonraker can't be asked (set `MOONRAKER_URL` if it isn't on
+`localhost:7125`), it tells you to restart Klipper yourself instead.
+Changing settings from the Screen reader menu never restarts Klipper,
+so the menu is there during prints too.
 
 Options:
 
