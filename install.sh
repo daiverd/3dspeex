@@ -6,8 +6,10 @@
 #
 # 3dspeex installer. Run on the printer, as the user Klipper runs as:
 #   ./install.sh               install / update
-#   ./install.sh --usb-audio   also make a USB sound card the default
 #   ./install.sh --uninstall   remove 3dspeex (audio setup is left alone)
+# A plugged-in USB sound card is made the default ALSA device. Add
+# --no-usb-audio to leave audio alone, or --usb-audio to set it up even
+# with no USB card plugged in or a /etc/asound.conf of your own.
 # Add --no-restart to skip restarting Klipper.
 # Paths can be overridden: KLIPPER_DIR=... CONFIG_DIR=... ./install.sh
 # and the service name (KIAUH multi-instance): KLIPPER_SERVICE=klipper-1
@@ -28,10 +30,11 @@ MENU_CFG="$CONFIG_DIR/screen_reader_menu.cfg"
 MENU_INCLUDE="[include screen_reader_menu.cfg]"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 
-usb_audio=0 restart=1 uninstall=0
+usb_audio=auto restart=1 uninstall=0
 for arg in "$@"; do
     case "$arg" in
         --usb-audio) usb_audio=1 ;;
+        --no-usb-audio) usb_audio=0 ;;
         --no-restart) restart=0 ;;
         --uninstall) uninstall=1 ;;
         -h|--help) sed -n '/^# 3dspeex installer/,/^# and the service/p' "$0" | cut -c3-; exit 0 ;;
@@ -41,6 +44,15 @@ done
 
 say() { echo "==> $*"; }
 warn() { echo "!!  $*" >&2; }
+
+# Is a USB sound card plugged in? (the cards the udev rule renames)
+have_usb_card() {
+    local card
+    for card in /sys/class/sound/card[0-9]*; do
+        readlink -f "$card" | grep -q /usb && return 0
+    done
+    return 1
+}
 
 have_klipper_service() {
     systemctl cat "$KLIPPER_SERVICE.service" >/dev/null 2>&1
@@ -202,15 +214,34 @@ if have_klipper_service; then
     fi
 fi
 
-# 6. Optional: always use a USB sound card
+# 6. Make a USB sound card the default: printer boards often have
+#    onboard or HDMI audio that would otherwise be picked. Done by itself
+#    when it's safe, and again on updates once it has been done.
+USB_RULES=/etc/udev/rules.d/85-usb-audio-default.rules
+if [ "$usb_audio" = auto ]; then
+    usb_audio=0
+    if [ -f "$USB_RULES" ]; then
+        usb_audio=1
+    elif ! have_usb_card; then
+        say "No USB sound card plugged in; using the default sound device." \
+            "To use a USB speaker, plug it in and run this again."
+    elif command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
+        say "PulseAudio/PipeWire picks the sound device; leaving audio alone."
+    elif [ -f /etc/asound.conf ] && ! grep -q 3dspeex /etc/asound.conf; then
+        warn "/etc/asound.conf is your own, so the USB sound card wasn't" \
+             "made the default. Run with --usb-audio to replace it" \
+             "(it's backed up first)."
+    else
+        usb_audio=1
+    fi
+fi
 if [ "$usb_audio" = 1 ]; then
     if command -v pactl >/dev/null && pactl info >/dev/null 2>&1; then
         warn "PulseAudio/PipeWire is running; it manages the default" \
              "device itself, so the ALSA setup below may be ignored."
     fi
-    say "Installing USB audio udev rule and /etc/asound.conf"
-    sudo install -m 644 "$REPO_DIR/audio/85-usb-audio-default.rules" \
-        /etc/udev/rules.d/85-usb-audio-default.rules
+    say "Making the USB sound card the default (udev rule and /etc/asound.conf)"
+    sudo install -m 644 "$REPO_DIR/audio/85-usb-audio-default.rules" "$USB_RULES"
     if [ -f /etc/asound.conf ] &&
             ! cmp -s /etc/asound.conf "$REPO_DIR/audio/asound.conf"; then
         say "Backing up /etc/asound.conf to /etc/asound.conf.$STAMP"

@@ -66,7 +66,8 @@ symlinks `screen_reader.py` into `~/klipper/klippy/extras/`, creates
 `~/printer_data/config/screen_reader.cfg` and includes it from `printer.cfg`
 (a backup of `printer.cfg` is made), symlinks `screen_reader_menu.cfg`
 into the config folder and includes it from `screen_reader.cfg`, adds
-the Klipper user to the `audio` group, and restarts Klipper. It only
+the Klipper user to the `audio` group, makes a plugged-in USB sound card
+the default (see USB audio below), and restarts Klipper. It only
 restarts Klipper when Moonraker says no print is running or paused; if
 Moonraker can't be asked (set `MOONRAKER_URL` if it isn't on
 `localhost:7125`), it tells you to restart Klipper yourself instead.
@@ -75,20 +76,19 @@ so the menu is there during prints too.
 
 Options:
 
-    --usb-audio    make a USB sound card the default ALSA device (see below)
+    --usb-audio    set up USB audio even when it would be skipped (see below)
+    --no-usb-audio leave audio alone
     --no-restart   don't restart Klipper
     --uninstall    remove the symlink and the include
 
 For non-standard locations, set `KLIPPER_DIR`, `CONFIG_DIR`, or
 `KLIPPER_SERVICE` (e.g. `klipper-1` for KIAUH multi-instance setups).
 
-To update, pull and re-run the installer with the options you used
-before. It keeps your `screen_reader.cfg`, and reinstalls the
-`--usb-audio` files in case they changed:
+To update, pull and re-run the installer. It keeps your
+`screen_reader.cfg`, and reinstalls the USB audio files in case they
+changed if they were installed before:
 
-    cd ~/3dspeex && git pull && ./install.sh --usb-audio
-
-(leave out `--usb-audio` if you didn't use it).
+    cd ~/3dspeex && git pull && ./install.sh
 
 ### Manual installation
 
@@ -126,8 +126,8 @@ location.
     #   now read as 100.)
     #mixer_device: default
     #   The ALSA device whose volume is set, as for amixer -D. "default"
-    #   is the card /etc/asound.conf names (the USB card, with
-    #   --usb-audio), or the first card.
+    #   is the card /etc/asound.conf names (the USB card, if the
+    #   installer set it up), or the first card.
     #mixer_control:
     #   The volume control on that device, as listed by amixer
     #   scontrols, e.g. Headset, or Speaker,1 for the second control of
@@ -175,16 +175,24 @@ include that instead: the installed file is a link into the repo.
 ## USB audio
 
 The SV08 host board has onboard and HDMI audio outputs, so a USB speaker
-is not the default ALSA device. `install.sh --usb-audio` installs two
-files from `audio/`:
+would not be the default ALSA device. So when a USB sound card is plugged
+in, `install.sh` installs two files from `audio/`:
 
 - `/etc/udev/rules.d/85-usb-audio-default.rules` sets the ALSA ID of any
   USB sound card to `usbaudio`
 - `/etc/asound.conf` makes `usbaudio` the default device, through
   `dmix` so other programs can play sound at the same time
 
-After installing, replug the USB device and check that it is listed as
-`usbaudio` in `/proc/asound/cards`.
+After installing, replug the USB device if the installer asks, and check
+that it is listed as `usbaudio` in `/proc/asound/cards`.
+
+It is skipped, with a message, when no USB sound card is plugged in,
+when PulseAudio or PipeWire is running, or when `/etc/asound.conf`
+already exists and isn't from 3dspeex. `--usb-audio` sets it up anyway
+(backing up `/etc/asound.conf`); `--no-usb-audio` always skips it. Once
+installed, re-running the installer updates the files. To undo it,
+delete both files (restore your old `/etc/asound.conf` from its backup,
+if any) and reboot.
 
 If no USB audio device is connected, playback fails rather than falling
 back to the onboard outputs. With two USB devices, only the first one
