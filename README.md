@@ -6,11 +6,14 @@ reads the status screen, and announces heating, print progress, finished
 prints, and errors.
 
 Speech plays through a speaker connected to the printer, such as a USB
-speaker. Everything runs on the printer itself.
+speaker or headset. Everything runs on the printer itself.
 
 Developed on a Sovol SV08. Other Klipper printers with a screen and
-control knob should work but haven't been tested; reports are welcome.
-Touchscreen-only printers are not supported yet.
+control knob should work but haven't been tested yet. This is a
+community effort: if you try it on your printer, whether it works or
+not, please open an issue or reach out through
+https://rustytelephone.net/contact/. Touchscreen-only printers are not
+supported yet.
 
 ## Usage
 
@@ -218,9 +221,9 @@ SSH. See `kcon --help`.
 ## Troubleshooting
 
 No speech: check that the Klipper user can play audio outside a login
-session:
+session (run this as that user, the same one you installed as):
 
-    sudo systemd-run --uid=sovol --pty --quiet espeak-ng hello
+    sudo systemd-run --uid="$USER" --pty --quiet espeak-ng hello
 
 If this fails, add the user to the `audio` group, or see USB audio above.
 If it works but the printer is silent, look for `screen_reader: speech
